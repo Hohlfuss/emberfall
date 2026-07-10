@@ -1,0 +1,156 @@
+export type Page = 'battle' | 'woodcutting' | 'mining' | 'crafting' | 'workers' | 'inventory' | 'achievements' | 'shop'
+export type Skill = 'woodcutting' | 'mining'
+export type GearSlot = 'weapon' | 'helmet' | 'chest' | 'legs' | 'boots' | 'gloves' | 'ring' | 'amulet' | 'pickaxe' | 'hatchet'
+
+export type Resource = {
+  id: string
+  name: string
+  item: string
+  tier: number
+  duration: number
+  icon: string
+  color: string
+  skill: Skill
+  family: string
+}
+
+export type Bonuses = Partial<{
+  attack: number
+  defense: number
+  maxHealth: number
+  attackSpeed: number
+  woodSpeed: number
+  miningSpeed: number
+  woodYield: number
+  miningYield: number
+  woodCrit: number
+  miningCrit: number
+  critPower: number
+  fortune: number
+  recoverySpeed: number
+  encounterSpeed: number
+}>
+
+export type Gear = {
+  id: string
+  name: string
+  slot: GearSlot
+  tier: number
+  icon: string
+  description: string
+  bonuses: Bonuses
+}
+
+export type Recipe = {
+  id: string
+  name: string
+  category: 'components' | 'tools' | 'combat' | 'accessories'
+  description: string
+  duration: number
+  costs: Record<string, number>
+  outputItem?: string
+  outputQty?: number
+  outputGear?: string
+  progress: number
+}
+
+const treeData = [
+  ['pine', 'Pine Tree', 'Pine Log', 1, 10, '🌲', '#58956a'],
+  ['birch', 'Silver Birch', 'Birch Log', 2, 16, '🌳', '#9aaa87'],
+  ['oak', 'Ancient Oak', 'Oak Log', 3, 24, '🌳', '#7da05a'],
+  ['maple', 'Red Maple', 'Maple Log', 4, 34, '🍁', '#ad6a43'],
+  ['willow', 'Weeping Willow', 'Willow Log', 5, 46, '🌿', '#5f9676'],
+  ['yew', 'Twisted Yew', 'Yew Log', 6, 60, '🌲', '#8461a5'],
+  ['ironwood', 'Ironwood Tree', 'Ironwood Log', 7, 78, '🌴', '#8c7158'],
+  ['elder', 'Elderwood', 'Elder Log', 8, 98, '🌴', '#d3a84f'],
+  ['spirit', 'Spirit Cedar', 'Spirit Log', 9, 122, '🎋', '#55b6a8'],
+  ['worldroot', 'Worldroot', 'Worldroot Log', 10, 150, '🌲', '#e2c46c'],
+] as const
+
+const miningData = [
+  ['stone', 'Stone Outcrop', 'Stone', 1, 10, '🪨', '#7f8b94', 'rock'],
+  ['copper', 'Copper Vein', 'Copper Ore', 2, 16, '⛏️', '#b8734f', 'ore'],
+  ['limestone', 'Limestone Shelf', 'Limestone', 3, 24, '🪨', '#b9b39e', 'rock'],
+  ['iron', 'Iron Deposit', 'Iron Ore', 4, 34, '⛏️', '#8fa1aa', 'ore'],
+  ['granite', 'Granite Face', 'Granite', 5, 46, '🪨', '#887d83', 'rock'],
+  ['silver', 'Silver Seam', 'Silver Ore', 6, 60, '💎', '#b9c9d6', 'ore'],
+  ['obsidian', 'Obsidian Cluster', 'Obsidian', 7, 78, '🪨', '#66557d', 'rock'],
+  ['gold', 'Gold Vein', 'Gold Ore', 8, 98, '✨', '#d5ad43', 'ore'],
+  ['moonstone', 'Moonstone Geode', 'Moonstone', 9, 122, '🔮', '#719fc5', 'rock'],
+  ['mythril', 'Mythril Core', 'Mythril Ore', 10, 150, '💠', '#55b8d0', 'ore'],
+] as const
+
+export const woods: Resource[] = treeData.map(([id, name, item, tier, duration, icon, color]) => ({ id, name, item, tier, duration, icon, color, skill: 'woodcutting', family: 'wood' }))
+export const rocks: Resource[] = miningData.map(([id, name, item, tier, duration, icon, color, family]) => ({ id, name, item, tier, duration, icon, color, skill: 'mining', family }))
+export const allResources = [...woods, ...rocks]
+
+export const gearCatalog: Record<string, Gear> = {
+  rustySword: { id: 'rustySword', name: 'Rusty Sword', slot: 'weapon', tier: 0, icon: '🗡️', description: 'Still sharper than your fists.', bonuses: { attack: 2 } },
+  wornHatchet: { id: 'wornHatchet', name: 'Worn Hatchet', slot: 'hatchet', tier: 0, icon: '🪓', description: 'A battered starter hatchet.', bonuses: {} },
+  crackedPickaxe: { id: 'crackedPickaxe', name: 'Cracked Pickaxe', slot: 'pickaxe', tier: 0, icon: '⛏️', description: 'A battered starter pickaxe.', bonuses: {} },
+  pineHatchet: { id: 'pineHatchet', name: 'Pinebound Hatchet', slot: 'hatchet', tier: 1, icon: '🪓', description: 'A balanced early logging tool.', bonuses: { woodSpeed: 12, woodYield: 1, woodCrit: 3 } },
+  copperPickaxe: { id: 'copperPickaxe', name: 'Copper Pickaxe', slot: 'pickaxe', tier: 1, icon: '⛏️', description: 'Reliable on shallow deposits.', bonuses: { miningSpeed: 12, miningYield: 1, miningCrit: 3 } },
+  oakHatchet: { id: 'oakHatchet', name: 'Oaksteel Hatchet', slot: 'hatchet', tier: 3, icon: '🪓', description: 'Bites deep into dense timber.', bonuses: { woodSpeed: 25, woodYield: 2, woodCrit: 7, critPower: .25 } },
+  ironPickaxe: { id: 'ironPickaxe', name: 'Iron Pickaxe', slot: 'pickaxe', tier: 3, icon: '⛏️', description: 'Breaks stubborn rock with ease.', bonuses: { miningSpeed: 25, miningYield: 2, miningCrit: 7, critPower: .25 } },
+  yewHatchet: { id: 'yewHatchet', name: 'Yew Moon Hatchet', slot: 'hatchet', tier: 6, icon: '🪓', description: 'A master logger’s enchanted blade.', bonuses: { woodSpeed: 42, woodYield: 3, woodCrit: 12, critPower: .5, fortune: 5 } },
+  mythrilPickaxe: { id: 'mythrilPickaxe', name: 'Mythril Pickaxe', slot: 'pickaxe', tier: 10, icon: '⛏️', description: 'Makes the mountain feel hollow.', bonuses: { miningSpeed: 55, miningYield: 4, miningCrit: 15, critPower: .75, fortune: 8 } },
+  ironSword: { id: 'ironSword', name: 'Iron Longsword', slot: 'weapon', tier: 3, icon: '⚔️', description: 'A proper adventurer’s weapon.', bonuses: { attack: 10, attackSpeed: 100 } },
+  ironHelm: { id: 'ironHelm', name: 'Iron Helm', slot: 'helmet', tier: 3, icon: '🪖', description: 'Keeps claws away from your face.', bonuses: { defense: 4, maxHealth: 10 } },
+  ironChest: { id: 'ironChest', name: 'Ironbark Cuirass', slot: 'chest', tier: 4, icon: '🥋', description: 'Layered wood and iron plate.', bonuses: { defense: 7, maxHealth: 25 } },
+  ironLegs: { id: 'ironLegs', name: 'Iron Greaves', slot: 'legs', tier: 4, icon: '🦿', description: 'Heavy, but reassuring.', bonuses: { defense: 5, maxHealth: 15 } },
+  trailBoots: { id: 'trailBoots', name: 'Trailrunner Boots', slot: 'boots', tier: 2, icon: '🥾', description: 'Quicker feet in work and war.', bonuses: { attackSpeed: 120, woodSpeed: 5, miningSpeed: 5 } },
+  loggerGloves: { id: 'loggerGloves', name: 'Artisan Gloves', slot: 'gloves', tier: 3, icon: '🧤', description: 'A surer grip means better yields.', bonuses: { woodYield: 1, miningYield: 1, woodCrit: 2, miningCrit: 2 } },
+  silverRing: { id: 'silverRing', name: 'Ring of Fortune', slot: 'ring', tier: 6, icon: '💍', description: 'Sometimes there is more than expected.', bonuses: { fortune: 10 } },
+  moonAmulet: { id: 'moonAmulet', name: 'Moonstone Amulet', slot: 'amulet', tier: 9, icon: '📿', description: 'Focuses each perfect strike.', bonuses: { critPower: 1, woodCrit: 5, miningCrit: 5, maxHealth: 30 } },
+  bronzeSword: { id: 'bronzeSword', name: 'Bronze Shortsword', slot: 'weapon', tier: 1, icon: '🗡️', description: 'The first meaningful combat upgrade.', bonuses: { attack: 5 } },
+  copperHelm: { id: 'copperHelm', name: 'Copper Cap', slot: 'helmet', tier: 1, icon: '🪖', description: 'Light protection for early tiers.', bonuses: { defense: 2, maxHealth: 8 } },
+  copperChest: { id: 'copperChest', name: 'Copper Scale Vest', slot: 'chest', tier: 1, icon: '🥋', description: 'Overlapping scales soften monster claws.', bonuses: { defense: 3, maxHealth: 14 } },
+  campCharm: { id: 'campCharm', name: 'Hearthstone Charm', slot: 'amulet', tier: 2, icon: '🧿', description: 'Improves health recovery after defeat.', bonuses: { recoverySpeed: 1500, maxHealth: 5 } },
+  scoutToken: { id: 'scoutToken', name: 'Scout’s Token', slot: 'ring', tier: 2, icon: '💍', description: 'Finds the next enemy more quickly.', bonuses: { encounterSpeed: 400, attackSpeed: 50 } },
+  silverSaber: { id: 'silverSaber', name: 'Silver Saber', slot: 'weapon', tier: 6, icon: '⚔️', description: 'Fast, precise, and deadly.', bonuses: { attack: 18, attackSpeed: 180 } },
+  obsidianHelm: { id: 'obsidianHelm', name: 'Obsidian War Helm', slot: 'helmet', tier: 7, icon: '🪖', description: 'Dark glass reinforced with iron bands.', bonuses: { defense: 10, maxHealth: 25 } },
+  obsidianChest: { id: 'obsidianChest', name: 'Obsidian Bulwark', slot: 'chest', tier: 7, icon: '🥋', description: 'Armor built for the upper monster tiers.', bonuses: { defense: 16, maxHealth: 50, recoverySpeed: 500 } },
+  goldGreaves: { id: 'goldGreaves', name: 'Sunforged Greaves', slot: 'legs', tier: 8, icon: '🦿', description: 'Enchanted gold moves without weight.', bonuses: { defense: 9, maxHealth: 30, encounterSpeed: 250 } },
+}
+
+export const recipes: Recipe[] = [
+  { id: 'plank', name: 'Pine Planks', category: 'components', description: 'Prepare timber for advanced recipes.', duration: 12, costs: { 'Pine Log': 3 }, outputItem: 'Pine Plank', outputQty: 2, progress: 0 },
+  { id: 'copperIngot', name: 'Copper Ingot', category: 'components', description: 'Smelt raw copper into a workable bar.', duration: 18, costs: { 'Copper Ore': 3, Stone: 1 }, outputItem: 'Copper Ingot', outputQty: 1, progress: 0 },
+  { id: 'ironIngot', name: 'Iron Ingot', category: 'components', description: 'Strong metal used throughout the forge.', duration: 28, costs: { 'Iron Ore': 3, Limestone: 1 }, outputItem: 'Iron Ingot', outputQty: 1, progress: 0 },
+  { id: 'silverIngot', name: 'Silver Ingot', category: 'components', description: 'Refined metal for enchanted accessories.', duration: 45, costs: { 'Silver Ore': 4, Granite: 1 }, outputItem: 'Silver Ingot', outputQty: 1, progress: 0 },
+  { id: 'mythrilIngot', name: 'Mythril Ingot', category: 'components', description: 'An impossibly light masterwork material.', duration: 90, costs: { 'Mythril Ore': 5, Obsidian: 2 }, outputItem: 'Mythril Ingot', outputQty: 1, progress: 0 },
+  { id: 'pineHatchetRecipe', name: 'Pinebound Hatchet', category: 'tools', description: 'Craft an equippable tier I hatchet.', duration: 25, costs: { 'Pine Plank': 3, Stone: 4 }, outputGear: 'pineHatchet', progress: 0 },
+  { id: 'copperPickaxeRecipe', name: 'Copper Pickaxe', category: 'tools', description: 'Craft an equippable tier I pickaxe.', duration: 28, costs: { 'Pine Plank': 2, 'Copper Ingot': 2 }, outputGear: 'copperPickaxe', progress: 0 },
+  { id: 'oakHatchetRecipe', name: 'Oaksteel Hatchet', category: 'tools', description: 'A fast, high-yield logging tool.', duration: 55, costs: { 'Oak Log': 10, 'Iron Ingot': 4 }, outputGear: 'oakHatchet', progress: 0 },
+  { id: 'ironPickaxeRecipe', name: 'Iron Pickaxe', category: 'tools', description: 'A fast, high-yield mining tool.', duration: 55, costs: { 'Oak Log': 6, 'Iron Ingot': 5 }, outputGear: 'ironPickaxe', progress: 0 },
+  { id: 'yewHatchetRecipe', name: 'Yew Moon Hatchet', category: 'tools', description: 'Exceptional speed, yield, and critical power.', duration: 110, costs: { 'Yew Log': 12, 'Silver Ingot': 6, Obsidian: 3 }, outputGear: 'yewHatchet', progress: 0 },
+  { id: 'mythrilPickaxeRecipe', name: 'Mythril Pickaxe', category: 'tools', description: 'The ultimate tool for deep mining.', duration: 180, costs: { 'Worldroot Log': 5, 'Mythril Ingot': 8, Moonstone: 4 }, outputGear: 'mythrilPickaxe', progress: 0 },
+  { id: 'ironSwordRecipe', name: 'Iron Longsword', category: 'combat', description: 'A large improvement to attack damage.', duration: 45, costs: { 'Iron Ingot': 4, 'Oak Log': 4 }, outputGear: 'ironSword', progress: 0 },
+  { id: 'ironHelmRecipe', name: 'Iron Helm', category: 'combat', description: 'Increases defense and maximum health.', duration: 40, costs: { 'Iron Ingot': 3, 'Oak Log': 2 }, outputGear: 'ironHelm', progress: 0 },
+  { id: 'ironChestRecipe', name: 'Ironbark Cuirass', category: 'combat', description: 'Heavy protection for dangerous enemy tiers.', duration: 75, costs: { 'Iron Ingot': 6, 'Oak Log': 8 }, outputGear: 'ironChest', progress: 0 },
+  { id: 'ironLegsRecipe', name: 'Iron Greaves', category: 'combat', description: 'Durable protection for your legs.', duration: 65, costs: { 'Iron Ingot': 5, 'Oak Log': 4 }, outputGear: 'ironLegs', progress: 0 },
+  { id: 'trailBootsRecipe', name: 'Trailrunner Boots', category: 'combat', description: 'Improves combat and gathering speed.', duration: 32, costs: { 'Birch Log': 8, 'Copper Ingot': 2 }, outputGear: 'trailBoots', progress: 0 },
+  { id: 'loggerGlovesRecipe', name: 'Artisan Gloves', category: 'accessories', description: 'Improves yield and critical chance for both skills.', duration: 48, costs: { 'Maple Log': 8, 'Iron Ingot': 2 }, outputGear: 'loggerGloves', progress: 0 },
+  { id: 'silverRingRecipe', name: 'Ring of Fortune', category: 'accessories', description: 'Raises the chance to double a gathering yield.', duration: 85, costs: { 'Silver Ingot': 5, 'Gold Ore': 2 }, outputGear: 'silverRing', progress: 0 },
+  { id: 'moonAmuletRecipe', name: 'Moonstone Amulet', category: 'accessories', description: 'Greatly empowers critical gathering actions.', duration: 150, costs: { Moonstone: 6, 'Spirit Log': 5, 'Gold Ore': 5 }, outputGear: 'moonAmulet', progress: 0 },
+  { id: 'birchPlank', name: 'Birch Planks', category: 'components', description: 'Flexible boards for light equipment.', duration: 16, costs: { 'Birch Log': 3 }, outputItem: 'Birch Plank', outputQty: 2, progress: 0 },
+  { id: 'oakPlank', name: 'Oak Planks', category: 'components', description: 'Dense boards for armor and tool hafts.', duration: 25, costs: { 'Oak Log': 3 }, outputItem: 'Oak Plank', outputQty: 2, progress: 0 },
+  { id: 'stoneBlock', name: 'Cut Stone Block', category: 'components', description: 'A precisely shaped building component.', duration: 16, costs: { Stone: 4 }, outputItem: 'Stone Block', outputQty: 1, progress: 0 },
+  { id: 'graniteBlock', name: 'Polished Granite', category: 'components', description: 'A durable component for advanced gear.', duration: 48, costs: { Granite: 4 }, outputItem: 'Granite Block', outputQty: 1, progress: 0 },
+  { id: 'goldIngot', name: 'Gold Ingot', category: 'components', description: 'Refined gold that holds enchantments well.', duration: 65, costs: { 'Gold Ore': 4, Obsidian: 1 }, outputItem: 'Gold Ingot', outputQty: 1, progress: 0 },
+  { id: 'obsidianPlate', name: 'Obsidian Plate', category: 'components', description: 'Fused volcanic glass and iron.', duration: 72, costs: { Obsidian: 4, 'Iron Ingot': 2 }, outputItem: 'Obsidian Plate', outputQty: 1, progress: 0 },
+  { id: 'bronzeSwordRecipe', name: 'Bronze Shortsword', category: 'combat', description: 'An accessible weapon needed for tier III.', duration: 32, costs: { 'Copper Ingot': 2, 'Pine Plank': 1 }, outputGear: 'bronzeSword', progress: 0 },
+  { id: 'copperHelmRecipe', name: 'Copper Cap', category: 'combat', description: 'Early health and defense.', duration: 30, costs: { 'Copper Ingot': 2, 'Pine Plank': 1 }, outputGear: 'copperHelm', progress: 0 },
+  { id: 'copperChestRecipe', name: 'Copper Scale Vest', category: 'combat', description: 'Early armor for surviving tier II and III.', duration: 45, costs: { 'Copper Ingot': 4, 'Birch Plank': 2 }, outputGear: 'copperChest', progress: 0 },
+  { id: 'campCharmRecipe', name: 'Hearthstone Charm', category: 'accessories', description: 'Reduces death recovery by 1.5 seconds.', duration: 50, costs: { 'Birch Plank': 3, 'Stone Block': 2, 'Ancient Resin': 1 }, outputGear: 'campCharm', progress: 0 },
+  { id: 'scoutTokenRecipe', name: 'Scout’s Token', category: 'accessories', description: 'Reduces the delay before combat by 0.4 seconds.', duration: 55, costs: { 'Copper Ingot': 3, 'Birch Plank': 2, 'Rough Gem': 1 }, outputGear: 'scoutToken', progress: 0 },
+  { id: 'silverSaberRecipe', name: 'Silver Saber', category: 'combat', description: 'An advanced fast weapon.', duration: 95, costs: { 'Silver Ingot': 7, 'Yew Log': 5 }, outputGear: 'silverSaber', progress: 0 },
+  { id: 'obsidianHelmRecipe', name: 'Obsidian War Helm', category: 'combat', description: 'Upper-tier defensive equipment.', duration: 120, costs: { 'Obsidian Plate': 4, 'Silver Ingot': 2 }, outputGear: 'obsidianHelm', progress: 0 },
+  { id: 'obsidianChestRecipe', name: 'Obsidian Bulwark', category: 'combat', description: 'Massive health and defense with recovery speed.', duration: 165, costs: { 'Obsidian Plate': 7, 'Ironwood Log': 8 }, outputGear: 'obsidianChest', progress: 0 },
+  { id: 'goldGreavesRecipe', name: 'Sunforged Greaves', category: 'combat', description: 'Defense that also shortens encounter preparation.', duration: 145, costs: { 'Gold Ingot': 6, 'Elder Log': 5 }, outputGear: 'goldGreaves', progress: 0 },
+]
+
+export const slotLabels: Record<GearSlot, string> = {
+  weapon: 'Weapon', helmet: 'Helmet', chest: 'Chest', legs: 'Legs', boots: 'Boots',
+  gloves: 'Gloves', ring: 'Ring', amulet: 'Amulet', pickaxe: 'Pickaxe', hatchet: 'Hatchet',
+}
