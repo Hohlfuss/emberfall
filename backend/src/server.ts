@@ -119,7 +119,7 @@ const enemyArchetypes = [
 ]
 const enemyNames = ['Moss Rat', 'Cave Slime', 'Feral Imp', 'Dust Goblin', 'Wild Wolf', 'Stone Drake', 'Void Wraith']
 const games = new Map<string, Game>()
-type Account = { email: string; name: string; salt: string; passwordHash: string; gameId: string }
+type Account = { username: string; name: string; salt: string; passwordHash: string; gameId: string }
 const accounts = new Map<string, Account>()
 const tokens = new Map<string, string>()
 
@@ -577,17 +577,17 @@ function passwordHash(password: string, salt: string) {
   return scryptSync(password, salt, 64).toString('hex')
 }
 
-function issueToken(email: string) {
+function issueToken(username: string) {
   const token = randomBytes(32).toString('hex')
-  tokens.set(token, email)
+  tokens.set(token, username)
   return token
 }
 
 function authorizedGame(request: express.Request, gameId: string) {
   const header = request.headers.authorization
   const token = header?.startsWith('Bearer ') ? header.slice(7) : ''
-  const email = tokens.get(token)
-  const account = email ? accounts.get(email) : undefined
+  const username = tokens.get(token)
+  const account = username ? accounts.get(username) : undefined
   if (!account || account.gameId !== gameId) return undefined
   return games.get(gameId)
 }
@@ -596,34 +596,32 @@ app.get('/api/health', (_request, response) => response.json({ ok: true, games: 
 app.get('/api/config', (_request, response) => response.json(config))
 
 app.post('/api/auth/register', (request, response) => {
-  const rawName = request.body?.name
-  const rawEmail = request.body?.email
+  const rawUsername = request.body?.username
   const rawPassword = request.body?.password
-  if (typeof rawName !== 'string' || !rawName.trim()) return response.status(400).json({ error: 'A hero name is required.' })
-  if (typeof rawEmail !== 'string' || !/^\S+@\S+\.\S+$/.test(rawEmail.trim())) return response.status(400).json({ error: 'A valid email is required.' })
+  if (typeof rawUsername !== 'string' || !/^[a-zA-Z0-9_-]{3,18}$/.test(rawUsername.trim())) return response.status(400).json({ error: 'Username must be 3–18 characters using letters, numbers, _ or -.' })
   if (typeof rawPassword !== 'string' || rawPassword.length < 8) return response.status(400).json({ error: 'Password must contain at least 8 characters.' })
-  const email = rawEmail.trim().toLowerCase()
-  if (accounts.has(email)) return response.status(409).json({ error: 'An account with that email already exists.' })
-  const name = rawName.trim().slice(0, 18)
+  const username = rawUsername.trim().toLowerCase()
+  if (accounts.has(username)) return response.status(409).json({ error: 'That username is already taken.' })
+  const name = rawUsername.trim().slice(0, 18)
   const salt = randomBytes(16).toString('hex')
   const game = createGame(name)
-  accounts.set(email, { email, name, salt, passwordHash: passwordHash(rawPassword, salt), gameId: game.id })
-  response.status(201).json({ token: issueToken(email), state: publicState(game) })
+  accounts.set(username, { username, name, salt, passwordHash: passwordHash(rawPassword, salt), gameId: game.id })
+  response.status(201).json({ token: issueToken(username), state: publicState(game) })
 })
 
 app.post('/api/auth/login', (request, response) => {
-  const rawEmail = request.body?.email
+  const rawUsername = request.body?.username
   const rawPassword = request.body?.password
-  if (typeof rawEmail !== 'string' || typeof rawPassword !== 'string') return response.status(400).json({ error: 'Email and password are required.' })
-  const email = rawEmail.trim().toLowerCase()
-  const account = accounts.get(email)
-  if (!account) return response.status(401).json({ error: 'Invalid email or password.' })
+  if (typeof rawUsername !== 'string' || typeof rawPassword !== 'string') return response.status(400).json({ error: 'Username and password are required.' })
+  const username = rawUsername.trim().toLowerCase()
+  const account = accounts.get(username)
+  if (!account) return response.status(401).json({ error: 'Invalid username or password.' })
   const supplied = Buffer.from(passwordHash(rawPassword, account.salt), 'hex')
   const stored = Buffer.from(account.passwordHash, 'hex')
-  if (supplied.length !== stored.length || !timingSafeEqual(supplied, stored)) return response.status(401).json({ error: 'Invalid email or password.' })
+  if (supplied.length !== stored.length || !timingSafeEqual(supplied, stored)) return response.status(401).json({ error: 'Invalid username or password.' })
   const game = games.get(account.gameId)
   if (!game) return response.status(404).json({ error: 'Game session not found. Register again after the backend restart.' })
-  response.json({ token: issueToken(email), state: publicState(game) })
+  response.json({ token: issueToken(username), state: publicState(game) })
 })
 
 app.get('/api/games/:id', (request, response) => {

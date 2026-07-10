@@ -41,10 +41,10 @@ type Toast = { id: number; kind: GameEvent['kind']; title: string; detail: strin
 export function useGame() {
   const tabs: Page[] = ['battle', 'woodcutting', 'mining', 'crafting', 'workers', 'inventory', 'achievements', 'shop']
   const page = ref<Page>('battle')
-  const nameInput = ref('')
   const authMode = ref<'login' | 'register'>('login')
-  const authEmail = ref('')
+  const authUsername = ref('')
   const authPassword = ref('')
+  const authConfirmPassword = ref('')
   const authError = ref('')
   const authLoading = ref(false)
   const authToken = ref('')
@@ -209,10 +209,15 @@ export function useGame() {
   function switchAuthMode(mode: 'login' | 'register') {
     authMode.value = mode
     authError.value = ''
+    authConfirmPassword.value = ''
   }
   async function submitAuth() {
-    const clean = nameInput.value.trim().slice(0, 18)
-    if (!serverOnline.value || !authEmail.value.trim() || authPassword.value.length < 8 || (authMode.value === 'register' && !clean)) return
+    const username = authUsername.value.trim().slice(0, 18)
+    if (!serverOnline.value || !username || authPassword.value.length < 8) return
+    if (authMode.value === 'register' && authPassword.value !== authConfirmPassword.value) {
+      authError.value = 'Passwords do not match.'
+      return
+    }
     authLoading.value = true
     authError.value = ''
     try {
@@ -220,7 +225,7 @@ export function useGame() {
       seenEventIds.clear()
       const response = await fetch('/api/auth/' + authMode.value, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: clean, email: authEmail.value.trim(), password: authPassword.value }),
+        body: JSON.stringify({ username, password: authPassword.value }),
       })
       const result = await readJson<{ token: string; state: ServerState }>(response)
       authToken.value = result.token
@@ -279,7 +284,7 @@ export function useGame() {
   })
 
   return {
-    tabs, page, nameInput, authMode, authEmail, authPassword, authError, authLoading, serverOnline, backendError, playerName, gold, level, xp, xpNeeded, message, player, combatStats, dps,
+    tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authLoading, serverOnline, backendError, playerName, gold, level, xp, xpNeeded, message, player, combatStats, dps,
     enemyTier, highestEnemyTier, enemy, battleStarted, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
     heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
     woods, rocks, allResources, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, resourceMastery,
