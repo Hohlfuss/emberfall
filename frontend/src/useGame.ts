@@ -38,6 +38,14 @@ type ServerState = {
 }
 type Toast = { id: number; kind: GameEvent['kind']; title: string; detail: string }
 
+const API_URL = (
+  import.meta.env.VITE_API_URL || 'http://localhost:3000'
+).replace(/\/$/, '')
+
+function apiUrl(path: string): string {
+  return `${API_URL}${path}`
+}
+
 export function useGame() {
   const tabs: Page[] = ['battle', 'woodcutting', 'mining', 'crafting', 'workers', 'inventory', 'achievements', 'shop']
   const page = ref<Page>('battle')
@@ -193,19 +201,32 @@ export function useGame() {
     if (!response.ok) throw new Error(payload.error || 'The server rejected the request.')
     return payload
   }
-  async function loadConfig() { config.value = await readJson<GameConfig>(await fetch('/api/config')) }
-  async function connectBackend() {
-    try {
-      const response = await fetch('/api/health')
-      if (!response.ok) throw new Error()
-      serverOnline.value = true
-      backendError.value = ''
-      if (!config.value) await loadConfig()
-    } catch {
-      serverOnline.value = false
-      backendError.value = 'Backend offline. Start the server to play.'
+  async function loadConfig() {
+  config.value = await readJson<GameConfig>(
+    await fetch(apiUrl('/api/config'))
+  )
+}
+
+async function connectBackend() {
+  try {
+    const response = await fetch(apiUrl('/api/health'))
+
+    if (!response.ok) {
+      throw new Error()
     }
+
+    serverOnline.value = true
+    backendError.value = ''
+
+    if (!config.value) {
+      await loadConfig()
+    }
+  } catch {
+    serverOnline.value = false
+    backendError.value = 'Backend offline. Start the server to play.'
   }
+}
+
   function switchAuthMode(mode: 'login' | 'register') {
     authMode.value = mode
     authError.value = ''
@@ -223,7 +244,7 @@ export function useGame() {
     try {
       if (!config.value) await loadConfig()
       seenEventIds.clear()
-      const response = await fetch('/api/auth/' + authMode.value, {
+      const response = await fetch(apiUrl('/api/auth/' + authMode.value), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password: authPassword.value }),
       })
@@ -239,7 +260,7 @@ export function useGame() {
     if (!gameId.value || requestRunning) return
     requestRunning = true
     try {
-      const response = await fetch('/api/games/' + gameId.value, { headers: { Authorization: 'Bearer ' + authToken.value } })
+      const response = await fetch(apiUrl('/api/games/' + gameId.value), { headers: { Authorization: 'Bearer ' + authToken.value } })
       if (response.status === 401 || response.status === 404) {
         state.value = null; gameId.value = ''; authToken.value = ''; authError.value = 'The backend restarted. Register or log in again.'; return
       }
@@ -256,7 +277,7 @@ export function useGame() {
   async function sendAction(action: Record<string, unknown>) {
     if (!serverOnline.value || !gameId.value) return
     try {
-      const response = await fetch('/api/games/' + gameId.value + '/actions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + authToken.value }, body: JSON.stringify(action) })
+      const response = await fetch(apiUrl('/api/games/' + gameId.value + '/actions'), { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + authToken.value }, body: JSON.stringify(action) })
       applyServerState(await readJson<ServerState>(response))
     } catch (error) { actionError.value = error instanceof Error ? error.message : 'Action failed.' }
   }

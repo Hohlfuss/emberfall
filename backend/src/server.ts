@@ -6,7 +6,7 @@ import {
 } from '../../frontend/src/gameData.ts'
 
 const app = express()
-const port = 3_000
+const port = Number(process.env.PORT) || 3000
 app.use(express.json())
 app.use((request, response, next) => {
   response.setHeader('Access-Control-Allow-Origin', '*')
@@ -646,5 +646,6 @@ const tick = setInterval(() => {
   games.forEach(game => advanceGame(game, now))
 }, 100)
 
-const server = app.listen(port, () => console.log(`Emberfall backend running at http://localhost:${port}`))
-process.on('SIGTERM', () => { clearInterval(tick); server.close() })
+const server = app.listen(port, '0.0.0.0', () => {
+  console.log(`Emberfall backend running on port ${port}`)
+})
