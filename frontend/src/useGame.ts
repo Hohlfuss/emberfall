@@ -85,7 +85,6 @@ export function useGame() {
   const gameId = ref('')
   const state = ref<ServerState | null>(null)
   const config = ref<GameConfig | null>(null)
-  const craftFilter = ref<'all' | Recipe['category']>('all')
   const toasts = ref<Toast[]>([])
   const leaderboardCategory = ref<LeaderboardCategory>('woodcutting')
   const leaderboardLabel = ref('Woodcutting Level')
@@ -174,6 +173,7 @@ export function useGame() {
   const craftingProfession = computed(() => state.value?.craftingProfession || { level: 1, xp: 0, xpNeeded: 35 })
   const craftingStats = computed(() => state.value?.craftingStats || { speed: 0, conservationChance: 0, bonusOutputChance: 0, totalCrafts: 0, materialsSaved: 0, bonusOutputs: 0 })
   const craftingId = computed(() => state.value?.crafting?.id || '')
+  const recipeLevels = computed(() => state.value?.recipeLevels || {})
 
   function professionStats(skill: Skill) { return state.value?.professionStats[skill] || emptyProfessionStats }
   function professionXpNeeded(skill: Skill) { return professions.value[skill].xpNeeded }
@@ -181,13 +181,7 @@ export function useGame() {
   function effectiveDuration(resource: Resource) { return state.value?.effectiveDurations[resource.id] || resource.duration }
 
   const recipeList = computed(() => (config.value?.recipes || []).map(recipe => ({ ...recipe, progress: state.value?.crafting?.id === recipe.id ? state.value.crafting.progress : 0 })))
-  const filteredRecipes = computed(() => recipeList.value.filter(recipe => {
-    const matchesFilter = craftFilter.value === 'all' || recipe.category === craftFilter.value
-    return matchesFilter && (!recipe.outputGear || Boolean(state.value?.nextGearIds.includes(recipe.outputGear)))
-  }))
-  function canCraft(recipe: Recipe) {
-    return craftingProfession.value.level >= (state.value?.recipeLevels[recipe.id] || 1) && (!recipe.outputGear || !ownedGear.value.includes(recipe.outputGear)) && Object.entries(recipe.costs).every(([item, cost]) => (inventory.value[item] || 0) >= cost)
-  }
+  const craftingRecipes = computed(() => recipeList.value.filter(recipe => !recipe.outputGear || Boolean(state.value?.nextGearIds.includes(recipe.outputGear))))
 
   const storeListings = computed(() => storePaths.value.map(path => {
     const index = path.items.findIndex(id => !ownedGear.value.includes(id))
@@ -241,19 +235,6 @@ export function useGame() {
       `Mastery: ${mastery} (+${Math.floor(mastery / 10)}% speed)`,
       `Quick harvest: ${stats.critChance.toFixed(1)}% chance to finish ${stats.critPower.toFixed(2)}× faster (yield stays ${stats.yield}).`,
       `Rare materials have a small resource-tier-based drop chance.`,
-    ].join('\n')
-  }
-
-  function recipeTooltip(recipe: Recipe) {
-    const output = recipe.outputGear ? gearCatalog.value[recipe.outputGear] : undefined
-    const costs = Object.entries(recipe.costs).map(([item, amount]) => `${amount} × ${item}`).join(', ')
-    return [
-      recipe.name,
-      recipe.description,
-      `Craft time: ${recipe.duration}s`,
-      `Requires crafting level ${state.value?.recipeLevels[recipe.id] || 1}`,
-      `Materials: ${costs}`,
-      output ? gearTooltip(output) : `Creates ${recipe.outputQty || 1} × ${recipe.outputItem}`,
     ].join('\n')
   }
 
@@ -501,11 +482,11 @@ export function useGame() {
     heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
     woods, rocks, allResources, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, sellPrices, resourceMastery,
     workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId, craftingProfession, craftingStats, factionDefinitions, alliedFaction, factions, dailyObjectives, dailyResetAt,
-    craftFilter, filteredRecipes, storeListings, materialGroups, toasts,
+    craftingRecipes, recipeLevels, storeListings, materialGroups, toasts,
     leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
     chatMessages, chatOnline, chatError,
     auctionListings, auctionError, offlineProgress,
-    professionStats, professionXpNeeded, isUnlocked, effectiveDuration, canCraft, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip, recipeTooltip,
+    professionStats, professionXpNeeded, isUnlocked, effectiveDuration, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip,
     submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
   }
 }
