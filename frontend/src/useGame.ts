@@ -1,12 +1,12 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import type { Gear, GearSlot, Page, Recipe, Resource, Skill } from './gameData'
+import type { Gear, GearSlot, Page, ProfessionStats, Recipe, Resource, Skill } from './gameData'
 
 type ShopUpgradeId = 'medic' | 'scouting' | 'training' | 'fortitude' | 'autoBattle'
-type ProfessionStats = { speed: number; yield: number; critChance: number; critPower: number }
 type GameEvent = { id: number; kind: 'achievement' | 'critical'; title: string; detail: string }
 type Achievement = { id: string; name: string; description: string; goal: number; reward: number; icon: string; progress: number; unlocked: boolean }
 type StorePath = { id: string; name: string; icon: string; items: string[]; prices: number[] }
 type ShopUpgradeDetail = { id: ShopUpgradeId; name: string; description: string; icon: string; baseCost: number; max: number }
+type ServerProfessionStats = Omit<ProfessionStats, 'bonusYieldPercent'> & { bonusYieldPercent?: number; yield?: number }
 type FactionId = 'wardens' | 'delvers' | 'vanguard'
 export type FactionDefinition = { id: FactionId; name: string; icon: string; unlockLevel: number; description: string; ranks: readonly number[]; rewards: readonly string[] }
 type GameConfig = {
@@ -31,7 +31,7 @@ type ServerState = {
   craftingProfession: { level: number; xp: number; xpNeeded: number }
   craftingStats: { speed: number; conservationChance: number; bonusOutputChance: number; totalCrafts: number; materialsSaved: number; bonusOutputs: number }
   recipeLevels: Record<string, number>
-  professionStats: Record<Skill, ProfessionStats>
+  professionStats: Record<Skill, ServerProfessionStats>
   effectiveDurations: Record<string, number>
   resourceMastery: Record<string, number>
   jobs: Partial<Record<Skill, { id: string; critical: boolean; duration: number; progress: number }>>
@@ -40,7 +40,7 @@ type ServerState = {
   workers: number; workerPrice: number; workerAssignments: Record<string, number>; workerProgress: Record<string, number>; assignedWorkers: number; freeWorkers: number
   equipment: Record<GearSlot, string | undefined>; ownedGear: string[]; unlockedGear: string[]; gearSellPrices: Record<string, number>
   shopUpgrades: Record<ShopUpgradeId, number>; shopUpgradeCosts: Record<ShopUpgradeId, number>
-  crafting: { id: string; progress: number } | null
+  crafting: { id: string; progress: number; remaining: number } | null
   nextGearIds: string[]; achievements: Achievement[]; events: GameEvent[]
   alliedFaction: FactionId | null; factions: Record<FactionId, { reputation: number; rank: number }>
   dailyObjectives: Array<{ id: string; label: string; target: number; reward: number; icon: string; progress: number; completed: boolean }>; dailyResetAt: number
@@ -106,7 +106,7 @@ export function useGame() {
   let requestRunning = false
   let craftRequestRunning = false
 
-  const emptyProfessionStats: ProfessionStats = { speed: 0, yield: 1, critChance: 0, critPower: 1.5 }
+  const emptyProfessionStats: ProfessionStats = { speed: 0, bonusYieldPercent: 1, critChance: 0, critPower: 1.5 }
   const emptyCombat = { maxHealth: 100, attack: 0, defense: 0, attackSpeed: 1800, recoveryTime: 30000, enemyLoadTime: 2000, passiveRegen: .2 }
   const emptyEnemy = { name: 'Loading...', archetype: '', health: 0, maxHealth: 1, attack: 0, defense: 0, attackSpeed: 0, xp: 0, gold: 0 }
   const emptyEquipment = { weapon: undefined, helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: undefined, hatchet: undefined } satisfies Record<GearSlot, string | undefined>
@@ -135,8 +135,8 @@ export function useGame() {
   const heroHealth = computed(() => Math.max(0, player.value.health / combatStats.value.maxHealth * 100) + '%')
   const enemyHealth = computed(() => Math.max(0, enemy.value.health / enemy.value.maxHealth * 100) + '%')
   const xpPercent = computed(() => Math.min(100, xp.value / xpNeeded.value * 100) + '%')
-  const recoveryPercent = computed(() => (recovering.value ? 100 - recoveryRemaining.value / combatStats.value.recoveryTime * 100 : 0) + '%')
-  const enemyLoadPercent = computed(() => (enemyLoading.value ? 100 - enemyLoadRemaining.value / combatStats.value.enemyLoadTime * 100 : 0) + '%')
+  const recoveryPercent = computed(() => Math.min(100, Math.max(0, recovering.value ? 100 - recoveryRemaining.value / combatStats.value.recoveryTime * 100 : 0)) + '%')
+  const enemyLoadPercent = computed(() => Math.min(100, Math.max(0, enemyLoading.value ? 100 - enemyLoadRemaining.value / combatStats.value.enemyLoadTime * 100 : 0)) + '%')
   const battleButtonLabel = computed(() => recovering.value
     ? 'RECOVERING ' + (recoveryRemaining.value / 1000).toFixed(1) + 'S'
     : enemyLoading.value
@@ -176,12 +176,23 @@ export function useGame() {
   const craftingId = computed(() => state.value?.crafting?.id || '')
   const recipeLevels = computed(() => state.value?.recipeLevels || {})
 
-  function professionStats(skill: Skill) { return state.value?.professionStats[skill] || emptyProfessionStats }
+  function professionStats(skill: Skill): ProfessionStats {
+    const stats = state.value?.professionStats[skill]
+    if (!stats) return emptyProfessionStats
+    return {
+      ...stats,
+      bonusYieldPercent: stats.bonusYieldPercent ?? Math.max(0, ((stats.yield ?? 1) - 1) * 100),
+    }
+  }
   function professionXpNeeded(skill: Skill) { return professions.value[skill].xpNeeded }
   function isUnlocked(resource: Resource) { return professions.value[resource.skill].level >= resource.tier }
   function effectiveDuration(resource: Resource) { return state.value?.effectiveDurations[resource.id] || resource.duration }
 
-  const recipeList = computed(() => (config.value?.recipes || []).map(recipe => ({ ...recipe, progress: state.value?.crafting?.id === recipe.id ? state.value.crafting.progress : 0 })))
+  const recipeList = computed(() => (config.value?.recipes || []).map(recipe => ({
+    ...recipe,
+    progress: state.value?.crafting?.id === recipe.id ? state.value.crafting.progress : 0,
+    remaining: state.value?.crafting?.id === recipe.id ? state.value.crafting.remaining : undefined,
+  })))
   const craftingRecipes = computed(() => recipeList.value.filter(recipe => !recipe.outputGear || Boolean(state.value?.nextGearIds.includes(recipe.outputGear))))
 
   const storeListings = computed(() => storePaths.value.map(path => {
@@ -206,10 +217,18 @@ export function useGame() {
   })
 
   function formatBonus(stat: string, amount: number) {
-    const labels: Record<string, string> = { attack: 'Attack', defense: 'Defense', maxHealth: 'Health', attackSpeed: 'Attack speed', woodSpeed: 'WC speed', miningSpeed: 'Mining speed', woodYield: 'WC yield', miningYield: 'Mining yield', woodCrit: 'WC quick chance', miningCrit: 'Mining quick chance', critPower: 'Quick speed', recoverySpeed: 'Recovery time', encounterSpeed: 'Enemy load time' }
-    const percent = stat.includes('Speed') && stat !== 'attackSpeed' || stat.includes('Crit')
+    const labels: Record<string, string> = { attack: 'Attack', defense: 'Defense', maxHealth: 'Health', attackSpeed: 'Attack speed', woodSpeed: 'WC speed', miningSpeed: 'Mining speed', woodYield: 'WC yield', miningYield: 'Mining yield', woodBonusYieldPercent: 'WC bonus yield', miningBonusYieldPercent: 'Mining bonus yield', woodCrit: 'WC crit chance', miningCrit: 'Mining crit chance', critPower: 'Crit power', recoverySpeed: 'Recovery time', encounterSpeed: 'Enemy load time' }
+    const percent = stat.includes('Speed') && stat !== 'attackSpeed' || stat.includes('Crit') || stat.includes('BonusYield')
     const value = stat === 'attackSpeed' || stat === 'recoverySpeed' || stat === 'encounterSpeed' ? '-' + amount + 'ms' : stat === 'critPower' ? '+' + amount + '×' : '+' + amount + (percent ? '%' : '')
     return value + ' ' + (labels[stat] || stat)
+  }
+
+  function formatBonusDelta(stat: string, difference: number) {
+    const absolute = Math.abs(difference)
+    if (stat === 'attackSpeed' || stat === 'recoverySpeed' || stat === 'encounterSpeed') return `${difference >= 0 ? '-' : '+'}${absolute}ms`
+    if (stat === 'critPower') return `${difference >= 0 ? '+' : '-'}${absolute}×`
+    const percent = stat.includes('Speed') || stat.includes('Crit') || stat.includes('BonusYield')
+    return `${difference >= 0 ? '+' : '-'}${absolute}${percent ? '%' : ''}`
   }
 
   function gearTooltip(gear: Gear) {
@@ -218,7 +237,7 @@ export function useGame() {
     const changes = Object.entries(gear.bonuses).map(([stat, amount]) => {
       const current = Number(equipped?.bonuses[stat as keyof Gear['bonuses']] || 0)
       const difference = Number(amount) - current
-      const comparison = difference === 0 ? 'same as equipped' : `${difference > 0 ? '+' : ''}${difference} vs equipped`
+      const comparison = difference === 0 ? 'same as equipped' : `${formatBonusDelta(stat, difference)} vs equipped`
       return `${formatBonus(stat, Number(amount))} (${comparison})`
     })
     return [gear.name, gear.description, ...changes].join('\n')
@@ -227,14 +246,17 @@ export function useGame() {
   function resourceTooltip(resource: Resource) {
     const mastery = resourceMastery.value[resource.id] || 0
     const stats = professionStats(resource.skill)
+    const guaranteedYield = 1 + Math.floor(stats.bonusYieldPercent / 100)
+    const remainderChance = stats.bonusYieldPercent % 100
     return [
       resource.name,
       `Requires ${resource.skill} level ${resource.tier}`,
       `Produces ${resource.item}`,
       `Effective time: ${effectiveDuration(resource).toFixed(1)}s`,
-      `Current base yield: ${stats.yield}`,
+      `Base yield: 1`,
+      `Bonus yield: ${stats.bonusYieldPercent.toFixed(1)}% (${guaranteedYield} guaranteed${remainderChance ? `, plus a ${remainderChance.toFixed(1)}% chance for ${guaranteedYield + 1}` : ''})`,
       `Mastery: ${mastery} (+${Math.floor(mastery / 10)}% speed)`,
-      `Quick harvest: ${stats.critChance.toFixed(1)}% chance to finish ${stats.critPower.toFixed(2)}× faster (yield stays ${stats.yield}).`,
+      `Critical harvest: ${stats.critChance.toFixed(1)}% chance to run at ${stats.critPower.toFixed(2)}× speed; the bonus-yield roll is unchanged.`,
       `Rare materials have a small resource-tier-based drop chance.`,
     ].join('\n')
   }

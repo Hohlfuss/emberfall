@@ -1,9 +1,10 @@
 import express from 'express'
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto'
 import {
-  allResources, gearCatalog, recipes as recipeData, rocks, slotLabels, woods,
-  type Bonuses, type GearSlot, type Recipe, type Resource, type Skill,
+  allResources, GAME_PACE_MULTIPLIER, gearCatalog, recipes as recipeData, rocks, slotLabels, woods,
+  type Bonuses, type GearSlot, type ProfessionStats, type Recipe, type Resource, type Skill,
 } from '../../frontend/src/gameData.ts'
+import { rollGatherYield } from './gathering.ts'
 import { supabase } from "../supabase.ts";
 
 const leaderboardCategories = {
@@ -92,6 +93,7 @@ type Game = {
   workerAssignments: Record<string, number>
   workerProgress: Record<string, number>
   workers: number
+  levelRewardWorkers: number
   shopUpgrades: Record<ShopUpgrade, number>
   unlockedAchievements: Set<string>
   enemyTier: number
@@ -148,8 +150,8 @@ type Action =
   | { type: 'allyFaction'; factionId: FactionId }
 
 const factionDefinitions = [
-  { id: 'wardens', name: 'Verdant Wardens', icon: '🌿', unlockLevel: 3, description: 'Protectors of ancient forests. Reputation comes from woodcutting.', ranks: [50, 175, 450, 900], rewards: ['+5% woodcutting speed', '+1 woodcutting yield', '+5% quick-harvest chance', '+15% woodcutting speed'] },
-  { id: 'delvers', name: 'Deep Delvers', icon: '💎', unlockLevel: 5, description: 'Seekers of secrets beneath the mountains. Reputation comes from mining.', ranks: [50, 175, 450, 900], rewards: ['+5% mining speed', '+1 mining yield', '+5% quick-harvest chance', '+15% mining speed'] },
+  { id: 'wardens', name: 'Verdant Wardens', icon: '🌿', unlockLevel: 3, description: 'Protectors of ancient forests. Reputation comes from woodcutting.', ranks: [50, 175, 450, 900], rewards: ['+5% woodcutting speed', '+20% woodcutting bonus yield', '+5% woodcutting crit chance', '+15% woodcutting speed'] },
+  { id: 'delvers', name: 'Deep Delvers', icon: '💎', unlockLevel: 5, description: 'Seekers of secrets beneath the mountains. Reputation comes from mining.', ranks: [50, 175, 450, 900], rewards: ['+5% mining speed', '+20% mining bonus yield', '+5% mining crit chance', '+15% mining speed'] },
   { id: 'vanguard', name: 'Ember Vanguard', icon: '🔥', unlockLevel: 7, description: 'Monster hunters defending Emberfall. Reputation comes from victories.', ranks: [50, 175, 450, 900], rewards: ['+3 Attack', '+3 Defense', '+20 maximum health', '+8 Attack'] },
 ] as const
 
@@ -249,8 +251,9 @@ const ONLINE_WINDOW_MS = 30_000
 
 const gameOwners = new Map<string, string>()
 
-type StoredGame = Omit<Game, 'unlockedAchievements'> & {
+type StoredGame = Omit<Game, 'unlockedAchievements' | 'levelRewardWorkers'> & {
   unlockedAchievements: string[]
+  levelRewardWorkers?: number
 }
 
 function serializeGame(game: Game): StoredGame {
@@ -260,11 +263,29 @@ function serializeGame(game: Game): StoredGame {
   }
 }
 
+function normalizeLegacyTerminology(text: string) {
+  return text
+    .replaceAll('Quick harvest', 'Critical harvest')
+    .replaceAll('quick harvest', 'critical harvest')
+    .replaceAll('+1 woodcutting yield', '+20% woodcutting bonus yield')
+    .replaceAll('+1 mining yield', '+20% mining bonus yield')
+}
+
 function deserializeGame(value: unknown): Game {
   const stored = value as StoredGame
+  const expectedLevelRewards = levelWorkerRewardCount(stored.level ?? 1)
+  const recordedLevelRewards = stored.levelRewardWorkers ?? legacyLevelWorkerRewardCount(stored.level ?? 1)
+  const missingLevelRewards = Math.max(0, expectedLevelRewards - recordedLevelRewards)
 
   return {
     ...stored,
+
+    message: normalizeLegacyTerminology(stored.message ?? ''),
+    events: (stored.events ?? []).map(event => ({
+      ...event,
+      title: normalizeLegacyTerminology(event.title),
+      detail: normalizeLegacyTerminology(event.detail),
+    })),
 
     lifetime: {
       ...createLifetimeStats(),
@@ -277,7 +298,8 @@ function deserializeGame(value: unknown): Game {
     alliedFaction: stored.alliedFaction ?? null,
     factions: stored.factions ?? { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } },
     daily: stored.daily ?? createDailyState(stored.lifetime ?? createLifetimeStats()),
-    workers: stored.level >= 2 && stored.workers === 0 ? 1 : stored.workers,
+    workers: Math.max(stored.workers ?? 0, recordedLevelRewards) + missingLevelRewards,
+    levelRewardWorkers: expectedLevelRewards,
     player: {
       ...stored.player,
       baseRecoveryTime: Math.max(30_000, stored.player?.baseRecoveryTime ?? 30_000),
@@ -354,6 +376,8 @@ async function saveGame(
 function xpNeeded(game: Game) { return Math.round(140 + 85 * (game.level - 1) ** 1.55) }
 function professionXpNeeded(game: Game, skill: Skill) { return Math.round(55 * game.professions[skill].level ** 1.8) }
 function craftingXpNeeded(game: Game) { return Math.round(70 * game.craftingProfession.level ** 1.7) }
+function levelWorkerRewardCount(level: number) { return (level >= 2 ? 1 : 0) + Math.floor(level / 5) }
+function legacyLevelWorkerRewardCount(level: number) { return (level >= 2 ? 1 : 0) + Math.floor(level / 10) }
 function craftingStats(game: Game) {
   const level = game.craftingProfession.level
   return {
@@ -389,8 +413,8 @@ function totalBonuses(game: Game): Bonuses {
   })
   const faction = game.alliedFaction
   const rank = faction ? game.factions[faction].rank : 0
-  if (faction === 'wardens') { result.woodSpeed = (result.woodSpeed || 0) + (rank >= 1 ? 5 : 0) + (rank >= 4 ? 15 : 0); result.woodYield = (result.woodYield || 0) + (rank >= 2 ? 1 : 0); result.woodCrit = (result.woodCrit || 0) + (rank >= 3 ? 5 : 0) }
-  if (faction === 'delvers') { result.miningSpeed = (result.miningSpeed || 0) + (rank >= 1 ? 5 : 0) + (rank >= 4 ? 15 : 0); result.miningYield = (result.miningYield || 0) + (rank >= 2 ? 1 : 0); result.miningCrit = (result.miningCrit || 0) + (rank >= 3 ? 5 : 0) }
+  if (faction === 'wardens') { result.woodSpeed = (result.woodSpeed || 0) + (rank >= 1 ? 5 : 0) + (rank >= 4 ? 15 : 0); result.woodBonusYieldPercent = (result.woodBonusYieldPercent || 0) + (rank >= 2 ? 20 : 0); result.woodCrit = (result.woodCrit || 0) + (rank >= 3 ? 5 : 0) }
+  if (faction === 'delvers') { result.miningSpeed = (result.miningSpeed || 0) + (rank >= 1 ? 5 : 0) + (rank >= 4 ? 15 : 0); result.miningBonusYieldPercent = (result.miningBonusYieldPercent || 0) + (rank >= 2 ? 20 : 0); result.miningCrit = (result.miningCrit || 0) + (rank >= 3 ? 5 : 0) }
   if (faction === 'vanguard') { result.attack = (result.attack || 0) + (rank >= 1 ? 3 : 0) + (rank >= 4 ? 8 : 0); result.defense = (result.defense || 0) + (rank >= 2 ? 3 : 0); result.maxHealth = (result.maxHealth || 0) + (rank >= 3 ? 20 : 0) }
   return result
 }
@@ -414,30 +438,39 @@ function combatStats(game: Game) {
     maxHealth: game.player.baseMaxHealth + (bonuses.maxHealth || 0) + game.shopUpgrades.fortitude * 5,
     attack: game.player.baseAttack + (bonuses.attack || 0) + game.shopUpgrades.training,
     defense: game.player.baseDefense + (bonuses.defense || 0),
-    attackSpeed: Math.max(600, game.player.baseAttackSpeed - (bonuses.attackSpeed || 0)),
-    recoveryTime: Math.max(3000, game.player.baseRecoveryTime - (bonuses.recoverySpeed || 0) - game.shopUpgrades.medic * 500),
-    enemyLoadTime: Math.max(500, game.player.baseEnemyLoadTime - (bonuses.encounterSpeed || 0) - game.shopUpgrades.scouting * 100),
+    attackSpeed: Math.max(600, Math.round(game.player.baseAttackSpeed * GAME_PACE_MULTIPLIER - (bonuses.attackSpeed || 0))),
+    recoveryTime: Math.max(3000, Math.round(game.player.baseRecoveryTime * GAME_PACE_MULTIPLIER - (bonuses.recoverySpeed || 0) - game.shopUpgrades.medic * 500)),
+    enemyLoadTime: Math.max(500, Math.round(game.player.baseEnemyLoadTime * GAME_PACE_MULTIPLIER - (bonuses.encounterSpeed || 0) - game.shopUpgrades.scouting * 100)),
     passiveRegen: game.player.basePassiveRegen,
   }
 }
 
-function professionStats(game: Game, skill: Skill) {
+function professionStats(game: Game, skill: Skill): ProfessionStats {
   const profession = game.professions[skill]
   const bonuses = totalBonuses(game)
   const prefix = skill === 'woodcutting' ? 'wood' : 'mining'
   return {
     speed: Math.min(180, (profession.level - 1) * 1.25 + (bonuses[`${prefix}Speed` as keyof Bonuses] || 0)),
-    // Yield is deliberately scarce: skill milestones at 25 and 50, plus rare gear/faction rewards.
-    yield: Math.min(5, 1 + Math.floor(profession.level / 25) + (bonuses[`${prefix}Yield` as keyof Bonuses] || 0)),
+    // Bonus yield starts low, grows slowly, and remains uncapped for future upgrades.
+    bonusYieldPercent: 1 + (profession.level - 1) * .5 + (bonuses[`${prefix}BonusYieldPercent` as keyof Bonuses] || 0),
     critChance: Math.min(30, 3 + (profession.level - 1) * .35 + (bonuses[`${prefix}Crit` as keyof Bonuses] || 0)),
     critPower: Math.min(2.5, 1.5 + (bonuses.critPower || 0)),
+  }
+}
+
+function publicProfessionStats(game: Game, skill: Skill) {
+  const stats = professionStats(game, skill)
+  return {
+    ...stats,
+    // Temporary compatibility for clients from before percentage-based bonus yield.
+    yield: 1 + Math.floor(stats.bonusYieldPercent / 100),
   }
 }
 
 function effectiveDuration(game: Game, resource: Resource, critical = false) {
   const stats = professionStats(game, resource.skill)
   const masterySpeed = Math.floor((game.resourceMastery[resource.id] || 0) / 10)
-  return Math.max(.75, resource.duration / (1 + (stats.speed + masterySpeed) / 100) / (critical ? stats.critPower : 1))
+  return Math.max(.75, resource.duration * GAME_PACE_MULTIPLIER / (1 + (stats.speed + masterySpeed) / 100) / (critical ? stats.critPower : 1))
 }
 
 function pushEvent(game: Game, kind: EventKind, title: string, detail: string) {
@@ -478,7 +511,7 @@ function rollEnemy(game: Game) {
   game.enemy.health = game.enemy.maxHealth
   game.enemy.attack = Math.max(1, Math.round(16 * 1.18 ** power * variance() * archetype.attack))
   game.enemy.defense = Math.floor(power * 1.6 + power ** 1.25 * .35 + Math.random() * 2) + archetype.defense
-  game.enemy.attackSpeed = Math.max(850, Math.min(3400, Math.round((2150 + Math.random() * 300) * archetype.interval / (1 + power * .025))))
+  game.enemy.attackSpeed = Math.max(850, Math.min(3400, Math.round((2150 + Math.random() * 300) * GAME_PACE_MULTIPLIER * archetype.interval / (1 + power * .025))))
   game.enemy.xp = Math.round(24 * 1.13 ** power * variance() * archetype.reward)
   game.enemy.gold = Math.round(8 * 1.12 ** power * variance() * archetype.reward)
 }
@@ -504,8 +537,10 @@ function gainXp(game: Game, amount: number) {
     game.player.baseAttack += 1
     if (game.level % 2 === 0) game.player.baseDefense += 1
     game.player.health = combatStats(game).maxHealth
-    if (game.level === 2 || game.level % 10 === 0) {
-      game.workers++
+    const earnedLevelWorkers = levelWorkerRewardCount(game.level)
+    if (earnedLevelWorkers > game.levelRewardWorkers) {
+      game.workers += earnedLevelWorkers - game.levelRewardWorkers
+      game.levelRewardWorkers = earnedLevelWorkers
       game.message = `Level ${game.level}! A gatherer joined you as a level reward.`
     } else game.message = `Level up! ${game.name} reached level ${game.level}.`
   }
@@ -516,7 +551,6 @@ function giveResource(game: Game, resource: Resource, amount: number, allowRare 
   game.inventory[resource.item] = (game.inventory[resource.item] || 0) + amount
   game.lifetime.gathered += amount
   game.resourceMastery[resource.id] = (game.resourceMastery[resource.id] || 0) + amount
-  const stats = professionStats(game, resource.skill)
   if (allowRare && Math.random() * 100 < Math.min(10, .5 + resource.tier * .75)) {
     const rare = resource.skill === 'woodcutting' ? 'Ancient Resin' : resource.family === 'ore' ? 'Ore Crystal' : 'Rough Gem'
     game.inventory[rare] = (game.inventory[rare] || 0) + 1
@@ -549,10 +583,10 @@ function completeGather(game: Game, skill: Skill) {
   delete game.jobs[skill]
   if (!resource) return
   const stats = professionStats(game, skill)
-  const amount = stats.yield
+  const amount = rollGatherYield(stats.bonusYieldPercent)
   giveResource(game, resource, amount, true)
   gainFactionReputation(game, resource.skill === 'woodcutting' ? 'wardens' : 'delvers', Math.max(1, resource.tier))
-  game.message = `Gathered ${amount} × ${resource.item}${job.critical ? ' with a quick harvest' : ''}.`
+  game.message = `Gathered ${amount} × ${resource.item}${job.critical ? ' with a critical harvest' : ''}.`
 }
 
 function completeCraft(game: Game) {
@@ -689,7 +723,7 @@ function advanceGame(game: Game, now = Date.now()) {
     const completions = Math.floor(game.workerProgress[resource.id] / 100)
     if (completions > 0) {
       game.workerProgress[resource.id] %= 100
-      giveResource(game, resource, completions * professionStats(game, resource.skill).yield)
+      giveResource(game, resource, rollGatherYield(professionStats(game, resource.skill).bonusYieldPercent, completions))
     }
   })
 
@@ -751,7 +785,7 @@ function createGame(name: string): Game {
     inventory: {}, ownedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe'], unlockedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe'],
     equipment: { weapon: 'rustySword', helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: 'crackedPickaxe', hatchet: 'wornHatchet' },
     professions: { woodcutting: { level: 1, xp: 0 }, mining: { level: 1, xp: 0 } }, craftingProfession: { level: 1, xp: 0 }, resourceMastery: {}, jobs: {},
-    workerAssignments: {}, workerProgress: {}, workers: 0, shopUpgrades: { medic: 0, scouting: 0, training: 0, fortitude: 0, autoBattle: 0 },
+    workerAssignments: {}, workerProgress: {}, workers: 0, levelRewardWorkers: 0, shopUpgrades: { medic: 0, scouting: 0, training: 0, fortitude: 0, autoBattle: 0 },
     unlockedAchievements: new Set(), alliedFaction: null, factions: { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } }, daily: createDailyState(createLifetimeStats()),
     lifetime: createLifetimeStats(),
     enemyTier: 1, highestEnemyTier: 1, enemy: { name: 'Loading...', archetype: '', health: 0, maxHealth: 1, attack: 0, defense: 0, attackSpeed: 0, xp: 0, gold: 0 },
@@ -804,8 +838,8 @@ function performAction(game: Game, action: Action, now: number) {
       const duration = effectiveDuration(game, resource, critical)
       game.jobs[resource.skill] = { resourceId: resource.id, startedAt: now, endsAt: now + duration * 1000, critical, duration }
       if (critical) {
-        game.message = `Quick harvest! This action is ${stats.critPower.toFixed(2)}× faster.`
-        pushEvent(game, 'critical', 'Quick harvest!', `${resource.name} · ${stats.critPower.toFixed(2)}× action speed`)
+        game.message = `Critical harvest! This action runs at ${stats.critPower.toFixed(2)}× speed.`
+        pushEvent(game, 'critical', 'Critical harvest!', `${resource.name} · ${stats.critPower.toFixed(2)}× action speed`)
       } else game.message = `${resource.skill === 'woodcutting' ? 'Chopping' : 'Mining'} ${resource.name}...`
       game.lifetime.manualGathers++
       break
@@ -840,7 +874,7 @@ function performAction(game: Game, action: Action, now: number) {
         Object.entries(inventoryBefore).forEach(([item, count]) => { game.inventory[item] = count })
         reject(`Could not deduct the required ${invalidDeduction[0]}. No materials were consumed.`)
       }
-      const duration = recipe.duration * (1 - craftStats.speed / 100)
+      const duration = recipe.duration * GAME_PACE_MULTIPLIER * (1 - craftStats.speed / 100)
       game.crafting = { recipeId: recipe.id, startedAt: now, endsAt: now + duration * 1000, duration, receipt: receipt.join(' · ') }
       game.message = `Crafting ${recipe.name}... Used ${receipt.join(' · ')}.`
       break
@@ -965,6 +999,7 @@ function publicState(game: Game, now = Date.now()) {
   const crafting = game.crafting ? {
     id: game.crafting.recipeId,
     progress: Math.min(100, Math.max(0, (now - game.crafting.startedAt) / (game.crafting.endsAt - game.crafting.startedAt) * 100)),
+    remaining: Math.max(0, (game.crafting.endsAt - now) / 1000),
   } : null
   return {
     id: game.id, revision: game.revision, serverNow: now, playerName: game.name, gold: game.gold, level: game.level, xp: game.xp, xpNeeded: xpNeeded(game), message: game.message,
@@ -985,7 +1020,7 @@ function publicState(game: Game, now = Date.now()) {
       bonusOutputs: game.lifetime.craftingBonusOutputs,
     },
     recipeLevels: Object.fromEntries(recipeData.map(recipe => [recipe.id, recipeLevel(recipe)])),
-    professionStats: { woodcutting: professionStats(game, 'woodcutting'), mining: professionStats(game, 'mining') },
+    professionStats: { woodcutting: publicProfessionStats(game, 'woodcutting'), mining: publicProfessionStats(game, 'mining') },
     effectiveDurations: Object.fromEntries(allResources.map(resource => [resource.id, effectiveDuration(game, resource)])),
     resourceMastery: game.resourceMastery, jobs, inventory: game.inventory,
     sellPrices: Object.fromEntries(Object.keys(game.inventory).map(item => [item, itemSellPrice(item)])),

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import type { Gear, GearSlot, Recipe, Resource, Skill } from './gameData'
+import { GAME_PACE_MULTIPLIER, type Gear, type GearSlot, type Recipe, type Resource, type Skill } from './gameData'
 
-type DisplayRecipe = Recipe & { progress: number }
+type DisplayRecipe = Recipe & { progress: number; remaining?: number }
 type RecipeState = 'active' | 'ready' | 'missing' | 'locked'
 type RecipeView = 'all' | 'gear' | 'components'
 
@@ -177,7 +177,7 @@ function outputLabel(recipe: Recipe) {
 }
 
 function effectiveDuration(recipe: Recipe) {
-  return Math.max(.1, recipe.duration * (1 - props.stats.speed / 100))
+  return Math.max(.1, recipe.duration * GAME_PACE_MULTIPLIER * (1 - props.stats.speed / 100))
 }
 
 function formatDuration(seconds: number) {
@@ -243,11 +243,12 @@ function equippedGearFor(recipe: Recipe) {
 function formatBonus(stat: string, amount: number) {
   const labels: Record<string, string> = {
     attack: 'Attack', defense: 'Defense', maxHealth: 'Health', attackSpeed: 'Attack speed',
-    woodSpeed: 'Woodcutting speed', miningSpeed: 'Mining speed', woodYield: 'Woodcutting yield',
-    miningYield: 'Mining yield', woodCrit: 'Woodcutting quick chance', miningCrit: 'Mining quick chance',
-    critPower: 'Quick speed', recoverySpeed: 'Recovery time', encounterSpeed: 'Enemy load time',
+    woodSpeed: 'Woodcutting speed', miningSpeed: 'Mining speed', woodYield: 'Woodcutting yield', miningYield: 'Mining yield',
+    woodBonusYieldPercent: 'Woodcutting bonus yield', miningBonusYieldPercent: 'Mining bonus yield',
+    woodCrit: 'Woodcutting crit chance', miningCrit: 'Mining crit chance',
+    critPower: 'Crit power', recoverySpeed: 'Recovery time', encounterSpeed: 'Enemy load time',
   }
-  const percent = stat.includes('Speed') && stat !== 'attackSpeed' || stat.includes('Crit')
+  const percent = stat.includes('Speed') && stat !== 'attackSpeed' || stat.includes('Crit') || stat.includes('BonusYield')
   const value = stat === 'attackSpeed' || stat === 'recoverySpeed' || stat === 'encounterSpeed'
     ? `-${amount}ms`
     : stat === 'critPower'
@@ -264,7 +265,7 @@ function formatDelta(stat: string, difference: number) {
   const absolute = Math.abs(difference)
   if (stat === 'attackSpeed' || stat === 'recoverySpeed' || stat === 'encounterSpeed') return `${difference >= 0 ? '-' : '+'}${absolute}ms`
   if (stat === 'critPower') return `${difference >= 0 ? '+' : '-'}${absolute}×`
-  const percent = stat.includes('Speed') || stat.includes('Crit')
+  const percent = stat.includes('Speed') || stat.includes('Crit') || stat.includes('BonusYield')
   return `${difference >= 0 ? '+' : '-'}${absolute}${percent ? '%' : ''}`
 }
 
@@ -278,7 +279,14 @@ function gearComparison(recipe: Recipe) {
     const amount = Number(gear.bonuses[stat as keyof Gear['bonuses']] || 0)
     const current = Number(equipped.bonuses[stat as keyof Gear['bonuses']] || 0)
     const difference = amount - current
-    return difference === 0 ? '' : `${formatDelta(stat, difference)} ${stat === 'maxHealth' ? 'health' : stat.replace(/([A-Z])/g, ' $1').toLowerCase()}`
+    const label = stat === 'maxHealth'
+      ? 'health'
+      : stat === 'woodBonusYieldPercent'
+        ? 'woodcutting bonus yield'
+        : stat === 'miningBonusYieldPercent'
+          ? 'mining bonus yield'
+          : stat.replace(/([A-Z])/g, ' $1').toLowerCase()
+    return difference === 0 ? '' : `${formatDelta(stat, difference)} ${label}`
   }).filter(Boolean)
   return `Compared with ${equipped.name}: ${changes.join(' · ') || 'no stat change'}`
 }
@@ -297,7 +305,7 @@ function missingMaterialHint(item: string, needed: number) {
 }
 
 function activeTimeRemaining(recipe: DisplayRecipe) {
-  return Math.max(0, effectiveDuration(recipe) * (1 - recipe.progress / 100))
+  return Math.max(0, recipe.remaining ?? effectiveDuration(recipe) * (1 - recipe.progress / 100))
 }
 </script>
 
