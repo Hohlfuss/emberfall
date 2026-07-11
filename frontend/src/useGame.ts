@@ -55,6 +55,10 @@ type LeaderboardEntry = {
 }
 export type ChatMessage = { id: string; username: string; name: string; message: string; createdAt: string }
 export type AuctionListing = { id: string; seller_username: string; seller_name: string; item_name: string; quantity: number; price: number; created_at: string }
+export type OfflineProgress = {
+  durationMs: number; gold: number; xp: number; levels: number; kills: number; gathered: number; crafted: number
+  items: Array<{ item: string; quantity: number }>
+}
 
 const API_URL = (
   import.meta.env.VITE_API_URL || 'http://localhost:3000'
@@ -92,6 +96,7 @@ export function useGame() {
   const chatError = ref('')
   const auctionListings = ref<AuctionListing[]>([])
   const auctionError = ref('')
+  const offlineProgress = ref<OfflineProgress | null>(null)
   const seenEventIds = new Set<number>()
   const toastTimers = new Map<number, ReturnType<typeof setTimeout>>()
   let nextToastId = 1
@@ -261,6 +266,14 @@ export function useGame() {
     if (timer) clearTimeout(timer)
     toastTimers.delete(id)
   }
+  function dismissOfflineProgress() { offlineProgress.value = null }
+  function formatOfflineDuration(durationMs: number) {
+    const minutes = Math.max(1, Math.floor(durationMs / 60_000))
+    const days = Math.floor(minutes / 1440)
+    const hours = Math.floor(minutes % 1440 / 60)
+    const remainingMinutes = minutes % 60
+    return [days && `${days}d`, hours && `${hours}h`, remainingMinutes && `${remainingMinutes}m`].filter(Boolean).join(' ')
+  }
 
   function applyServerState(next: ServerState) {
     if (state.value?.id === next.id && next.revision < state.value.revision) return
@@ -413,8 +426,9 @@ export function useGame() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password: authPassword.value }),
       })
-      const result = await readJson<{ token: string; state: ServerState }>(response)
+      const result = await readJson<{ token: string; state: ServerState; offlineProgress?: OfflineProgress }>(response)
       authToken.value = result.token
+      offlineProgress.value = authMode.value === 'login' ? result.offlineProgress || null : null
       result.state.events.forEach(event => seenEventIds.add(event.id))
       applyServerState(result.state)
       startPolling()
@@ -488,8 +502,8 @@ export function useGame() {
     craftFilter, filteredRecipes, storeListings, materialGroups, toasts,
     leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
     chatMessages, chatOnline, chatError,
-    auctionListings, auctionError,
+    auctionListings, auctionError, offlineProgress,
     professionStats, professionXpNeeded, isUnlocked, effectiveDuration, canCraft, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip, recipeTooltip,
-    submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, dismissToast, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
+    submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
   }
 }

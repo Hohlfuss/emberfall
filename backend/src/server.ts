@@ -69,6 +69,7 @@ type FactionId = 'wardens' | 'delvers' | 'vanguard'
 type FactionProgress = { reputation: number; rank: number }
 type DailyMetric = 'kills' | 'gathered' | 'crafted' | 'actions' | 'goldEarned'
 type DailyState = { date: string; baseline: Record<DailyMetric, number>; completed: string[] }
+type ProgressSnapshot = { at: number; gold: number; xp: number; level: number; kills: number; gathered: number; crafted: number; inventory: Record<string, number>; ownedGear: string[] }
 
 type Game = {
   id: string
@@ -109,6 +110,7 @@ type Game = {
   alliedFaction: FactionId | null
   factions: Record<FactionId, FactionProgress>
   daily: DailyState
+  progressSnapshot?: ProgressSnapshot
 }
 
 type LifetimeStats = {
@@ -288,6 +290,7 @@ function deserializeGame(value: unknown): Game {
       autoBattle: stored.shopUpgrades?.autoBattle ?? 0,
     },
 
+    progressSnapshot: stored.progressSnapshot ?? progressSnapshot(stored as unknown as Game, stored.lastAdvancedAt ?? Date.now()),
     unlockedAchievements: new Set(
       stored.unlockedAchievements ?? [],
     ),
@@ -762,6 +765,7 @@ function createGame(name: string): Game {
     enemyTier: 1, highestEnemyTier: 1, enemy: { name: 'Loading...', archetype: '', health: 0, maxHealth: 1, attack: 0, defense: 0, attackSpeed: 0, xp: 0, gold: 0 },
     battleActive: false, autoBattle: false, nextPlayerAttackAt: 0, nextEnemyAttackAt: 0, recovery: null, enemyLoad: null, crafting: null,
     events: [], nextEventId: 1,
+    progressSnapshot: { at: now, gold: 0, xp: 0, level: 1, kills: 0, gathered: 0, crafted: 0, inventory: {}, ownedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe'] },
   }
   startEnemyLoad(game, now, 'Loading your first enemy...')
   games.set(game.id, game)
@@ -1007,6 +1011,63 @@ function publicState(game: Game, now = Date.now()) {
   }
 }
 
+type OfflineProgress = {
+  durationMs: number
+  gold: number
+  xp: number
+  levels: number
+  kills: number
+  gathered: number
+  crafted: number
+  items: Array<{ item: string; quantity: number }>
+  gear: Array<{ id: string; name: string; icon: string }>
+}
+
+function progressSnapshot(game: Game, at = Date.now()): ProgressSnapshot {
+  return {
+    at,
+    gold: game.gold ?? 0,
+    xp: game.xp ?? 0,
+    level: game.level ?? 1,
+    kills: game.lifetime?.kills ?? 0,
+    gathered: game.lifetime?.gathered ?? 0,
+    crafted: game.lifetime?.crafted ?? 0,
+    inventory: { ...(game.inventory ?? {}) },
+    ownedGear: [...(game.ownedGear ?? [])],
+  }
+}
+
+function captureOfflineProgress(game: Game, now: number): { state: ReturnType<typeof publicState>; offlineProgress?: OfflineProgress } {
+  const before = game.progressSnapshot ?? progressSnapshot(game, game.lastAdvancedAt)
+  const state = publicState(game, now)
+  const durationMs = Math.max(0, now - before.at)
+  game.progressSnapshot = progressSnapshot(game, now)
+
+  if (durationMs < 60_000) return { state }
+
+  const items = Object.entries(game.inventory)
+    .map(([item, quantity]) => ({ item, quantity: quantity - (before.inventory[item] || 0) }))
+    .filter(entry => entry.quantity > 0)
+    .sort((a, b) => b.quantity - a.quantity)
+
+  return {
+    state,
+    offlineProgress: {
+      durationMs,
+      gold: Math.max(0, game.gold - before.gold),
+      xp: Math.max(0, game.xp - before.xp),
+      levels: Math.max(0, game.level - before.level),
+      kills: Math.max(0, game.lifetime.kills - before.kills),
+      gathered: Math.max(0, game.lifetime.gathered - before.gathered),
+      crafted: Math.max(0, game.lifetime.crafted - before.crafted),
+      items,
+      gear: game.ownedGear
+        .filter(id => !before.ownedGear.includes(id))
+        .map(id => ({ id, name: gearCatalog[id]?.name ?? id, icon: gearCatalog[id]?.icon ?? '✦' })),
+    },
+  }
+}
+
 const config = { woods, rocks, allResources, gearCatalog, recipes: recipeData, slotLabels, storePaths, shopUpgradeDetails, factionDefinitions }
 
 function passwordHash(password: string, salt: string) {
@@ -1047,6 +1108,8 @@ function authorizedGame(
   if (!game) {
     return undefined
   }
+
+  game.progressSnapshot = progressSnapshot(game)
 
   return {
     username: session.username,
@@ -1222,9 +1285,11 @@ app.post('/api/auth/login', async (request, response) => {
     games.set(game.id, game)
     gameOwners.set(game.id, username)
 
+    const loginResult = captureOfflineProgress(game, Date.now())
+
     return response.json({
       token: issueToken(username, game.id),
-      state: publicState(game),
+      ...loginResult,
     })
   } catch (error) {
     console.error('Login error:', error)

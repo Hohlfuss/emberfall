@@ -23,9 +23,9 @@ const {
   craftFilter, filteredRecipes, storeListings, materialGroups, toasts,
   leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
   chatMessages, chatOnline, chatError,
-  auctionListings, auctionError,
+  auctionListings, auctionError, offlineProgress,
   professionStats, professionXpNeeded, isUnlocked, effectiveDuration, canCraft, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip, recipeTooltip,
-  submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, dismissToast, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
+  submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
 } = useGame()
 
 function refreshHoverTitles() {
@@ -106,6 +106,30 @@ onUpdated(refreshHoverTitles)
   <AuctionHouse v-if="playerName && page === 'auction'" :listings="auctionListings" :inventory="inventory" :gold="gold" :player-name="playerName" :error="auctionError" @refresh="loadAuction" @create="createAuction" @buy="buyAuction" @cancel="cancelAuction" />
   <FactionsPage v-if="playerName && page === 'factions'" :definitions="factionDefinitions" :progress="factions" :allied="alliedFaction" :level="level" @ally="allyFaction" />
   <ChatPanel v-if="playerName" :messages="chatMessages" :online="chatOnline" :error="chatError" @send="sendChat" />
+  <Teleport to="body">
+    <div v-if="offlineProgress" class="offline-progress-backdrop" role="presentation" @click.self="dismissOfflineProgress">
+      <section class="offline-progress" role="dialog" aria-modal="true" aria-labelledby="offline-progress-title">
+        <div class="crest">E</div>
+        <p class="eyebrow">WELCOME BACK · AWAY {{ formatOfflineDuration(offlineProgress.durationMs) }}</p>
+        <h2 id="offline-progress-title">While you were away</h2>
+        <p>Your workers and active tasks kept making progress.</p>
+        <div v-if="offlineProgress.gold || offlineProgress.xp || offlineProgress.levels || offlineProgress.kills || offlineProgress.gathered || offlineProgress.crafted" class="offline-totals">
+          <div v-if="offlineProgress.gold"><span>Gold</span><strong>+{{ offlineProgress.gold.toLocaleString() }}</strong></div>
+          <div v-if="offlineProgress.xp"><span>Player XP</span><strong>+{{ offlineProgress.xp.toLocaleString() }}</strong></div>
+          <div v-if="offlineProgress.levels"><span>Levels</span><strong>+{{ offlineProgress.levels }}</strong></div>
+          <div v-if="offlineProgress.kills"><span>Victories</span><strong>+{{ offlineProgress.kills }}</strong></div>
+          <div v-if="offlineProgress.gathered"><span>Gathered</span><strong>+{{ offlineProgress.gathered.toLocaleString() }}</strong></div>
+          <div v-if="offlineProgress.crafted"><span>Crafted</span><strong>+{{ offlineProgress.crafted.toLocaleString() }}</strong></div>
+        </div>
+        <div v-if="offlineProgress.items.length" class="offline-items">
+          <h3>Items collected</h3>
+          <p v-for="entry in offlineProgress.items" :key="entry.item"><span>{{ entry.item }}</span><strong>+{{ entry.quantity.toLocaleString() }}</strong></p>
+        </div>
+        <p v-if="!offlineProgress.items.length && !offlineProgress.gold && !offlineProgress.xp && !offlineProgress.kills && !offlineProgress.gathered && !offlineProgress.crafted" class="offline-empty">No rewards were earned. Assign workers or leave a task active before signing out.</p>
+        <button class="primary" autofocus @click="dismissOfflineProgress">CONTINUE</button>
+      </section>
+    </div>
+  </Teleport>
   <Teleport to="body">
     <TransitionGroup name="toast" tag="div" class="toast-stack" aria-live="polite">
       <article v-for="toast in toasts" :key="toast.id" class="toast-card" :class="toast.kind" @click="dismissToast(toast.id)">
