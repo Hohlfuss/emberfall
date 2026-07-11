@@ -104,6 +104,7 @@ export function useGame() {
   let healthTimer: ReturnType<typeof setInterval> | undefined
   let chatTimer: ReturnType<typeof setInterval> | undefined
   let requestRunning = false
+  let craftRequestRunning = false
 
   const emptyProfessionStats: ProfessionStats = { speed: 0, yield: 1, critChance: 0, critPower: 1.5 }
   const emptyCombat = { maxHealth: 100, attack: 0, defense: 0, attackSpeed: 1800, recoveryTime: 30000, enemyLoadTime: 2000, passiveRegen: .2 }
@@ -455,7 +456,12 @@ export function useGame() {
     if (tier !== enemyTier.value) void sendAction({ type: 'setEnemyTier', tier })
   }
   function gather(resource: Resource) { void sendAction({ type: 'gather', resourceId: resource.id }) }
-  function craft(recipe: Recipe) { void sendAction({ type: 'craft', recipeId: recipe.id }) }
+  async function craft(recipe: Recipe) {
+    if (craftRequestRunning) return
+    craftRequestRunning = true
+    try { await sendAction({ type: 'craft', recipeId: recipe.id }) }
+    finally { craftRequestRunning = false }
+  }
   function assignWorker(resource: Resource, change: number) { void sendAction({ type: 'assignWorker', resourceId: resource.id, change }) }
   function buyWorker() { void sendAction({ type: 'buyWorker' }) }
   function buyShopUpgrade(upgrade: ShopUpgradeDetail) { void sendAction({ type: 'buyUpgrade', upgradeId: upgrade.id }) }

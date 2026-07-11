@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUpdated } from 'vue'
+import { nextTick, onMounted, onUpdated, ref } from 'vue'
 import { useGame } from './useGame'
 import type { Skill } from './gameData'
 import ChatPanel from './ChatPanel.vue'
@@ -27,6 +27,10 @@ const {
   professionStats, professionXpNeeded, isUnlocked, effectiveDuration, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip,
   submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
 } = useGame()
+
+const craftingRecipeId = ref('')
+const craftingRecipeView = ref<'all' | 'gear' | 'components'>('gear')
+const craftingRecipeTrail = ref<string[]>([])
 
 function refreshHoverTitles() {
   void nextTick(() => {
@@ -79,7 +83,7 @@ onUpdated(refreshHoverTitles)
       <div class="resource-grid"><article v-for="resource in page === 'woodcutting' ? woods : rocks" :key="resource.id" class="resource-card" :class="{ locked: !isUnlocked(resource) }" :style="{ '--accent': resource.color }"><div class="resource-icon">{{ resource.icon }}</div><div><span class="tier">LEVEL {{ resource.tier }} · {{ resource.family }}</span><h3>{{ resource.name }}</h3><p>{{ resource.item }} · {{ effectiveDuration(resource).toFixed(1) }}s effective</p><small>Mastery {{ resourceMastery[resource.id] || 0 }} · +{{ Math.floor((resourceMastery[resource.id] || 0) / 10) }}% speed</small></div><div class="action-area"><div class="meter" :class="{ critical: jobs[page]?.id === resource.id && jobs[page]?.critical }"><i :style="{ width: `${jobs[page]?.id === resource.id ? jobs[page]?.progress : 0}%` }"></i></div><button @click="gather(resource)" :disabled="!!jobs[page] || !isUnlocked(resource)">{{ !isUnlocked(resource) ? `LEVEL ${resource.tier}` : jobs[page]?.id === resource.id ? `${jobs[page]?.critical ? 'QUICK · ' : ''}${Math.floor(jobs[page]?.progress || 0)}%` : page === 'woodcutting' ? 'CHOP' : 'MINE' }}</button></div><b class="owned">{{ inventory[resource.item] || 0 }} owned</b></article></div>
     </section>
 
-    <CraftingPage v-else-if="page === 'crafting'" :recipes="craftingRecipes" :inventory="inventory" :gear-catalog="gearCatalog" :recipe-levels="recipeLevels" :crafting-id="craftingId" :profession="craftingProfession" :stats="craftingStats" @craft="craft" />
+    <CraftingPage v-else-if="page === 'crafting'" v-model:selected-id="craftingRecipeId" v-model:view="craftingRecipeView" v-model:trail="craftingRecipeTrail" :recipes="craftingRecipes" :inventory="inventory" :gear-catalog="gearCatalog" :equipment="equipment" :resources="allResources" :recipe-levels="recipeLevels" :crafting-id="craftingId" :profession="craftingProfession" :stats="craftingStats" @craft="craft" @navigate="page = $event" />
 
     <section v-else-if="page === 'workers'" class="page-content"><div class="page-heading"><div><p class="eyebrow">AUTOMATION</p><h1>Workers</h1><p>Workers use elapsed time and operate at exactly 20% of manual speed.</p></div><div class="worker-count">{{ freeWorkers }} FREE / {{ workers }} TOTAL</div></div><div v-if="!workers" class="empty-state">You have no workers. Hire your first gatherer in the shop.</div><div class="worker-list"><article v-for="resource in allResources" :key="resource.id" class="worker-row" :class="{ locked: !isUnlocked(resource) }"><span class="resource-icon small">{{ resource.icon }}</span><div class="worker-resource"><h3>{{ resource.name }} <small>Lv. {{ resource.tier }}</small></h3><div class="meter"><i :style="{ width: `${workerProgress[resource.id] || 0}%` }"></i></div></div><button @click="assignWorker(resource,-1)" :disabled="!(workerAssignments[resource.id] || 0)">−</button><strong>{{ workerAssignments[resource.id] || 0 }}</strong><button @click="assignWorker(resource,1)" :disabled="freeWorkers <= 0 || !isUnlocked(resource)">+</button></article></div></section>
 
