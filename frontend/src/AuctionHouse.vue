@@ -14,9 +14,9 @@ const items = computed(() => Object.entries(props.inventory).filter(([, count]) 
   <section class="auction-house">
     <div class="page-heading"><div><p class="eyebrow">PLAYER MARKET</p><h1>Auction House</h1><p>List stackable materials and crafted components for other adventurers.</p></div><button @click="$emit('refresh')">REFRESH</button></div>
     <form class="auction-create" @submit.prevent="item && emit('create', item, quantity, price)">
-      <select v-model="item" required><option value="" disabled>Choose an item</option><option v-for="([name,count]) in items" :key="name" :value="name">{{ name }} ({{ count }})</option></select>
-      <input v-model.number="quantity" type="number" min="1" :max="inventory[item] || 1" aria-label="Quantity">
-      <input v-model.number="price" type="number" min="1" aria-label="Total gold price" placeholder="Gold price">
+      <label><span>Item to sell</span><select v-model="item" required><option value="" disabled>Choose an item</option><option v-for="([name,count]) in items" :key="name" :value="name">{{ name }} ({{ count }})</option></select></label>
+      <label><span>Amount</span><input v-model.number="quantity" type="number" min="1" :max="inventory[item] || 1" aria-label="Quantity"></label>
+      <label><span>Total price (gold)</span><input v-model.number="price" type="number" min="1" aria-label="Total gold price" placeholder="Gold price"></label>
       <button>CREATE LISTING</button>
     </form>
     <p v-if="error" class="auction-error">{{ error }}</p>

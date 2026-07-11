@@ -5,20 +5,22 @@ import type { Skill } from './gameData'
 import ChatPanel from './ChatPanel.vue'
 import AuctionHouse from './AuctionHouse.vue'
 import CraftingProgress from './CraftingProgress.vue'
+import AutoBattleControl from './AutoBattleControl.vue'
+import CraftingInventoryStats from './CraftingInventoryStats.vue'
 
 const {
   tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authLoading, serverOnline, backendError, playerName, gold, level, xp, xpNeeded, message, player, combatStats, dps,
-  enemyTier, highestEnemyTier, enemy, battleStarted, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
+  enemyTier, highestEnemyTier, enemy, battleStarted, autoBattle, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
   heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
   woods, rocks, allResources, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, resourceMastery,
   workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, shopUpgrades, achievements, craftingId,
-  craftingProfession,
+  craftingProfession, craftingStats,
   craftFilter, filteredRecipes, storeListings, materialGroups, toasts,
   leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
   chatMessages, chatOnline, chatError,
   auctionListings, auctionError,
   professionStats, professionXpNeeded, isUnlocked, effectiveDuration, canCraft, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip, recipeTooltip,
-  submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, dismissToast, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
+  submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, dismissToast, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
 } = useGame()
 
 function refreshHoverTitles() {
@@ -81,7 +83,11 @@ onUpdated(refreshHoverTitles)
 
     <section v-else class="page-content"><div class="page-heading"><div><p class="eyebrow">SETTLEMENT MARKET</p><h1>Shop</h1><p>Each equipment shelf displays only your next unowned tier. Buying or crafting it advances that shelf.</p></div></div><div class="shop-grid"><div class="equipment-store"><h2>Equipment merchant</h2><div class="store-shelves"><article v-for="listing in storeListings" :key="listing.id" class="store-listing"><template v-if="listing.item"><b>{{ listing.item.icon }}</b><div><span class="tier">{{ listing.name }} · NEXT TIER {{ listing.item.tier }}</span><h3>{{ listing.item.name }}</h3><p>{{ listing.item.description }}</p><small>{{ Object.entries(listing.item.bonuses).map(([stat,value]) => formatBonus(stat, Number(value))).join(' · ') }}</small></div><button @click="buyStoreGear(listing)" :disabled="gold < listing.price || !!craftingId">BUY · {{ listing.price.toLocaleString() }} GOLD</button></template><template v-else><b>✓</b><div><span class="tier">{{ listing.name }}</span><h3>All tiers owned</h3><p>This shelf is complete.</p></div><button disabled>SOLD OUT</button></template></article></div></div><article class="shop-card worker-shop"><div class="worker-art">♟</div><div><span class="tier">PERMANENT WORKER</span><h2>Hire a Gatherer</h2><p>Assign to any unlocked material. Level 2 and level 10 each award one free worker.</p><small>Owned: {{ workers }}</small></div><button class="primary" @click="buyWorker" :disabled="gold < workerPrice">HIRE · {{ workerPrice.toLocaleString() }} GOLD</button></article><article v-for="upgrade in shopUpgradeDetails" :key="upgrade.id" class="service-card"><b>{{ upgrade.icon }}</b><div><span class="tier">RANK {{ shopUpgrades[upgrade.id] }} / {{ upgrade.max }}</span><h3>{{ upgrade.name }}</h3><p>{{ upgrade.description }}</p></div><button @click="buyShopUpgrade(upgrade)" :disabled="shopUpgrades[upgrade.id] >= upgrade.max || gold < shopUpgradeCost(upgrade)">{{ shopUpgrades[upgrade.id] >= upgrade.max ? 'MAXIMUM RANK' : `UPGRADE · ${shopUpgradeCost(upgrade).toLocaleString()} GOLD` }}</button></article></div></section>
   </main>
+  <AutoBattleControl v-if="playerName && page === 'battle'" :enabled="autoBattle" :unlocked="shopUpgrades.autoBattle > 0" :recovering="recovering" @toggle="toggleAutoBattle" />
   <CraftingProgress v-if="playerName && page === 'crafting'" :level="craftingProfession.level" :xp="craftingProfession.xp" :needed="craftingProfession.xpNeeded" />
+  <Teleport v-if="playerName && page === 'inventory'" defer to=".inventory-column:last-child">
+    <CraftingInventoryStats :profession="craftingProfession" :stats="craftingStats" />
+  </Teleport>
   <AuctionHouse v-if="playerName && page === 'auction'" :listings="auctionListings" :inventory="inventory" :gold="gold" :player-name="playerName" :error="auctionError" @refresh="loadAuction" @create="createAuction" @buy="buyAuction" @cancel="cancelAuction" />
   <ChatPanel v-if="playerName" :messages="chatMessages" :online="chatOnline" :error="chatError" @send="sendChat" />
   <Teleport to="body">

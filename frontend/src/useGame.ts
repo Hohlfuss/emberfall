@@ -1,7 +1,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { Gear, GearSlot, Page, Recipe, Resource, Skill } from './gameData'
 
-type ShopUpgradeId = 'medic' | 'scouting' | 'training' | 'fortitude'
+type ShopUpgradeId = 'medic' | 'scouting' | 'training' | 'fortitude' | 'autoBattle'
 type ProfessionStats = { speed: number; yield: number; critChance: number; critPower: number; fortune: number; precision: number; xpBonus: number }
 type GameEvent = { id: number; kind: 'achievement' | 'critical'; title: string; detail: string }
 type Achievement = { id: string; name: string; description: string; goal: number; reward: number; icon: string; progress: number; unlocked: boolean }
@@ -23,9 +23,10 @@ type ServerState = {
   combatStats: { maxHealth: number; attack: number; defense: number; attackSpeed: number; recoveryTime: number; enemyLoadTime: number; passiveRegen: number }
   enemyTier: number; highestEnemyTier: number
   enemy: { name: string; archetype: string; health: number; maxHealth: number; attack: number; defense: number; attackSpeed: number; xp: number; gold: number }
-  battleStarted: boolean; recovering: boolean; enemyLoading: boolean; recoveryRemaining: number; enemyLoadRemaining: number
+  battleStarted: boolean; autoBattle: boolean; recovering: boolean; enemyLoading: boolean; recoveryRemaining: number; enemyLoadRemaining: number
   professions: Record<Skill, { level: number; xp: number; xpNeeded: number }>
   craftingProfession: { level: number; xp: number; xpNeeded: number }
+  craftingStats: { speed: number; conservationChance: number; bonusOutputChance: number; totalCrafts: number; materialsSaved: number; bonusOutputs: number }
   recipeLevels: Record<string, number>
   professionStats: Record<Skill, ProfessionStats>
   effectiveDurations: Record<string, number>
@@ -114,6 +115,7 @@ export function useGame() {
   const highestEnemyTier = computed(() => state.value?.highestEnemyTier || 1)
   const enemy = computed(() => state.value?.enemy || emptyEnemy)
   const battleStarted = computed(() => Boolean(state.value?.battleStarted))
+  const autoBattle = computed(() => Boolean(state.value?.autoBattle))
   const recovering = computed(() => Boolean(state.value?.recovering))
   const enemyLoading = computed(() => Boolean(state.value?.enemyLoading))
   const recoveryRemaining = computed(() => state.value?.recoveryRemaining || 0)
@@ -148,9 +150,10 @@ export function useGame() {
   const freeWorkers = computed(() => state.value?.freeWorkers || 0)
   const equipment = computed(() => state.value?.equipment || emptyEquipment)
   const ownedGear = computed(() => state.value?.ownedGear || [])
-  const shopUpgrades = computed(() => state.value?.shopUpgrades || { medic: 0, scouting: 0, training: 0, fortitude: 0 })
+  const shopUpgrades = computed(() => state.value?.shopUpgrades || { medic: 0, scouting: 0, training: 0, fortitude: 0, autoBattle: 0 })
   const achievements = computed(() => state.value?.achievements || [])
   const craftingProfession = computed(() => state.value?.craftingProfession || { level: 1, xp: 0, xpNeeded: 35 })
+  const craftingStats = computed(() => state.value?.craftingStats || { speed: 0, conservationChance: 0, bonusOutputChance: 0, totalCrafts: 0, materialsSaved: 0, bonusOutputs: 0 })
   const craftingId = computed(() => state.value?.crafting?.id || '')
 
   function professionStats(skill: Skill) { return state.value?.professionStats[skill] || emptyProfessionStats }
@@ -448,6 +451,7 @@ export function useGame() {
   function buyShopUpgrade(upgrade: ShopUpgradeDetail) { void sendAction({ type: 'buyUpgrade', upgradeId: upgrade.id }) }
   function buyStoreGear(listing: typeof storeListings.value[number]) { if (listing.itemId) void sendAction({ type: 'buyGear', gearId: listing.itemId }) }
   function equipGear(id: string) { void sendAction({ type: 'equipGear', gearId: id }) }
+  function toggleAutoBattle(enabled: boolean) { void sendAction({ type: 'toggleAutoBattle', enabled }) }
 
   onMounted(() => {
     void connectBackend()
@@ -461,15 +465,15 @@ export function useGame() {
 
   return {
     tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authLoading, serverOnline, backendError, playerName, gold, level, xp, xpNeeded, message, player, combatStats, dps,
-    enemyTier, highestEnemyTier, enemy, battleStarted, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
+    enemyTier, highestEnemyTier, enemy, battleStarted, autoBattle, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
     heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
     woods, rocks, allResources, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, resourceMastery,
-    workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, shopUpgrades, achievements, craftingId, craftingProfession,
+    workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, shopUpgrades, achievements, craftingId, craftingProfession, craftingStats,
     craftFilter, filteredRecipes, storeListings, materialGroups, toasts,
     leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
     chatMessages, chatOnline, chatError,
     auctionListings, auctionError,
     professionStats, professionXpNeeded, isUnlocked, effectiveDuration, canCraft, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip, recipeTooltip,
-    submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, dismissToast, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
+    submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, dismissToast, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
   }
 }

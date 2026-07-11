@@ -57,7 +57,7 @@ app.use((request, response, next) => {
 
 type Profession = { level: number; xp: number }
 type Enemy = { name: string; archetype: string; health: number; maxHealth: number; attack: number; defense: number; attackSpeed: number; xp: number; gold: number }
-type ShopUpgrade = 'medic' | 'scouting' | 'training' | 'fortitude'
+type ShopUpgrade = 'medic' | 'scouting' | 'training' | 'fortitude' | 'autoBattle'
 type EventKind = 'achievement' | 'critical'
 type GameEvent = { id: number; kind: EventKind; title: string; detail: string }
 type AchievementKind = 'level' | 'kills' | 'deaths' | 'tier' | 'gathered' | 'crafted' | 'workers' | 'woodLevel' | 'mineLevel' | 'gear'
@@ -92,6 +92,7 @@ type Game = {
   highestEnemyTier: number
   enemy: Enemy
   battleActive: boolean
+  autoBattle: boolean
   nextPlayerAttackAt: number
   nextEnemyAttackAt: number
   recovery: TimedState | null
@@ -116,6 +117,8 @@ type LifetimeStats = {
   gearBought: number
   goldEarned: number
   goldSpent: number
+  craftingMaterialsSaved: number
+  craftingBonusOutputs: number
 }
 
 type Action =
@@ -129,6 +132,7 @@ type Action =
   | { type: 'buyUpgrade'; upgradeId: ShopUpgrade }
   | { type: 'buyGear'; gearId: string }
   | { type: 'equipGear'; gearId: string }
+  | { type: 'toggleAutoBattle'; enabled: boolean }
 
 const storePaths = [
   { id: 'hatchets', name: 'Hatchets', icon: '🪓', items: ['pineHatchet', 'oakHatchet', 'mapleHatchet', 'yewHatchet'], prices: [175, 1800, 6500, 16000] },
@@ -148,6 +152,7 @@ const shopUpgradeDetails: Array<{ id: ShopUpgrade; name: string; description: st
   { id: 'scouting', name: 'Arena Logistics', description: '-0.1s next-enemy loading time per rank.', icon: '⏳', baseCost: 220, max: 10 },
   { id: 'training', name: 'Combat Training', description: '+1 attack per rank.', icon: '🎯', baseCost: 275, max: 10 },
   { id: 'fortitude', name: 'Fortitude Lessons', description: '+5 maximum health per rank.', icon: '❤️', baseCost: 240, max: 10 },
+  { id: 'autoBattle', name: 'Arena Steward', description: 'Unlocks Auto-Battle. Continues fighting until your hero is defeated.', icon: '⚙️', baseCost: 2500, max: 1 },
 ]
 
 const achievementDefinitions: AchievementDefinition[] = [
@@ -222,6 +227,14 @@ function deserializeGame(value: unknown): Game {
     },
 
     craftingProfession: stored.craftingProfession ?? { level: 1, xp: 0 },
+    autoBattle: stored.autoBattle ?? false,
+    shopUpgrades: {
+      medic: stored.shopUpgrades?.medic ?? 0,
+      scouting: stored.shopUpgrades?.scouting ?? 0,
+      training: stored.shopUpgrades?.training ?? 0,
+      fortitude: stored.shopUpgrades?.fortitude ?? 0,
+      autoBattle: stored.shopUpgrades?.autoBattle ?? 0,
+    },
 
     unlockedAchievements: new Set(
       stored.unlockedAchievements ?? [],
@@ -286,6 +299,14 @@ async function saveGame(
 function xpNeeded(game: Game) { return 100 + (game.level - 1) * 60 }
 function professionXpNeeded(game: Game, skill: Skill) { return Math.round(15 * game.professions[skill].level ** 1.5) }
 function craftingXpNeeded(game: Game) { return Math.round(35 * game.craftingProfession.level ** 1.45) }
+function craftingStats(game: Game) {
+  const level = game.craftingProfession.level
+  return {
+    speed: Math.min(45, (level - 1) * 2),
+    conservationChance: Math.min(20, Math.floor((level - 1) / 2) * 2),
+    bonusOutputChance: Math.min(15, Math.floor((level - 1) / 3) * 2.5),
+  }
+}
 function recipeLevel(recipe: Recipe) {
   if (recipe.outputGear) return Math.max(1, gearCatalog[recipe.outputGear]?.tier || 1)
   return Math.max(1, ...Object.keys(recipe.costs).map(item => allResources.find(resource => resource.item === item)?.tier || 1))
@@ -459,7 +480,14 @@ function completeCraft(game: Game) {
   if (!craft) return
   const recipe = recipeData.find(candidate => candidate.id === craft.recipeId)
   if (!recipe) return
-  if (recipe.outputItem) game.inventory[recipe.outputItem] = (game.inventory[recipe.outputItem] || 0) + (recipe.outputQty || 1)
+  if (recipe.outputItem) {
+    let quantity = recipe.outputQty || 1
+    if (Math.random() * 100 < craftingStats(game).bonusOutputChance) {
+      quantity += recipe.outputQty || 1
+      game.lifetime.craftingBonusOutputs += recipe.outputQty || 1
+    }
+    game.inventory[recipe.outputItem] = (game.inventory[recipe.outputItem] || 0) + quantity
+  }
   if (recipe.outputGear && !game.ownedGear.includes(recipe.outputGear)) game.ownedGear.push(recipe.outputGear)
   game.craftingProfession.xp += 8 + recipeLevel(recipe) * 6
   while (game.craftingProfession.xp >= craftingXpNeeded(game) && game.craftingProfession.level < 25) {
@@ -487,6 +515,7 @@ function finishVictory(game: Game, now: number) {
 function beginRecovery(game: Game, now: number) {
   stopBattle(game)
   game.lifetime.deaths++
+  game.autoBattle = false
   game.player.health = 0
   const duration = combatStats(game).recoveryTime
   game.recovery = { startedAt: now, endsAt: now + duration }
@@ -520,6 +549,15 @@ function advanceGame(game: Game, now = Date.now()) {
     game.enemyLoad = null
     rollEnemy(game)
     game.message = game.recovery ? `${game.enemy.name} is ready. ${game.name} is still recovering.` : `Tier ${game.enemyTier} ${game.enemy.name} is ready to fight.`
+  }
+
+  if (game.autoBattle && !game.battleActive && !game.recovery && !game.enemyLoad) {
+    const stats = combatStats(game)
+    game.player.health = Math.min(Math.max(1, game.player.health), stats.maxHealth)
+    game.battleActive = true
+    game.nextPlayerAttackAt = now + stats.attackSpeed
+    game.nextEnemyAttackAt = now + game.enemy.attackSpeed
+    game.message = `Auto-Battle started against ${game.enemy.name}.`
   }
 
   if (game.recovery) {
@@ -576,6 +614,8 @@ function createLifetimeStats(): LifetimeStats {
     gearBought: 0,
     goldEarned: 0,
     goldSpent: 0,
+    craftingMaterialsSaved: 0,
+    craftingBonusOutputs: 0,
   }
 }
 
@@ -588,11 +628,11 @@ function createGame(name: string): Game {
     inventory: {}, ownedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe'],
     equipment: { weapon: 'rustySword', helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: 'crackedPickaxe', hatchet: 'wornHatchet' },
     professions: { woodcutting: { level: 1, xp: 0 }, mining: { level: 1, xp: 0 } }, craftingProfession: { level: 1, xp: 0 }, resourceMastery: {}, jobs: {},
-    workerAssignments: {}, workerProgress: {}, workers: 0, shopUpgrades: { medic: 0, scouting: 0, training: 0, fortitude: 0 },
+    workerAssignments: {}, workerProgress: {}, workers: 0, shopUpgrades: { medic: 0, scouting: 0, training: 0, fortitude: 0, autoBattle: 0 },
     unlockedAchievements: new Set(),
     lifetime: createLifetimeStats(),
     enemyTier: 1, highestEnemyTier: 1, enemy: { name: 'Loading...', archetype: '', health: 0, maxHealth: 1, attack: 0, defense: 0, attackSpeed: 0, xp: 0, gold: 0 },
-    battleActive: false, nextPlayerAttackAt: 0, nextEnemyAttackAt: 0, recovery: null, enemyLoad: null, crafting: null,
+    battleActive: false, autoBattle: false, nextPlayerAttackAt: 0, nextEnemyAttackAt: 0, recovery: null, enemyLoad: null, crafting: null,
     events: [], nextEventId: 1,
   }
   startEnemyLoad(game, now, 'Loading your first enemy...')
@@ -654,8 +694,14 @@ function performAction(game: Game, action: Action, now: number) {
       if (recipe.outputGear && !nextGearIds(game).includes(recipe.outputGear)) reject('That is not the next equipment tier.')
       if (recipe.outputGear && game.ownedGear.includes(recipe.outputGear)) reject('That equipment is already owned.')
       if (!Object.entries(recipe.costs).every(([item, cost]) => (game.inventory[item] || 0) >= cost)) reject('Not enough materials.')
-      Object.entries(recipe.costs).forEach(([item, cost]) => game.inventory[item] -= cost)
-      game.crafting = { recipeId: recipe.id, startedAt: now, endsAt: now + recipe.duration * 1000, duration: recipe.duration }
+      const craftStats = craftingStats(game)
+      Object.entries(recipe.costs).forEach(([item, cost]) => {
+        const saved = Math.random() * 100 < craftStats.conservationChance ? 1 : 0
+        game.inventory[item] -= cost - saved
+        game.lifetime.craftingMaterialsSaved += saved
+      })
+      const duration = recipe.duration * (1 - craftStats.speed / 100)
+      game.crafting = { recipeId: recipe.id, startedAt: now, endsAt: now + duration * 1000, duration }
       game.message = `Crafting ${recipe.name}...`
       break
     }
@@ -713,6 +759,12 @@ function performAction(game: Game, action: Action, now: number) {
       equip(game, action.gearId, now)
       checkAchievements(game)
       break
+    case 'toggleAutoBattle':
+      if (game.shopUpgrades.autoBattle < 1) reject('Purchase Arena Steward to unlock Auto-Battle.')
+      if (typeof action.enabled !== 'boolean') reject('Invalid Auto-Battle setting.')
+      game.autoBattle = action.enabled
+      game.message = action.enabled ? 'Auto-Battle enabled.' : 'Auto-Battle disabled.'
+      break
     default:
       reject('Unknown action.')
   }
@@ -750,7 +802,7 @@ function publicState(game: Game, now = Date.now()) {
     id: game.id, revision: game.revision, serverNow: now, playerName: game.name, gold: game.gold, level: game.level, xp: game.xp, xpNeeded: xpNeeded(game), message: game.message,
     player: { health: game.player.health }, combatStats: stats,
     enemyTier: game.enemyTier, highestEnemyTier: game.highestEnemyTier, enemy: game.enemy,
-    battleStarted: game.battleActive, recovering: Boolean(game.recovery), enemyLoading: Boolean(game.enemyLoad),
+    battleStarted: game.battleActive, autoBattle: game.autoBattle, recovering: Boolean(game.recovery), enemyLoading: Boolean(game.enemyLoad),
     recoveryRemaining: game.recovery ? Math.max(0, game.recovery.endsAt - now) : 0,
     enemyLoadRemaining: game.enemyLoad ? Math.max(0, game.enemyLoad.endsAt - now) : 0,
     professions: {
@@ -758,6 +810,12 @@ function publicState(game: Game, now = Date.now()) {
       mining: { ...game.professions.mining, xpNeeded: professionXpNeeded(game, 'mining') },
     },
     craftingProfession: { ...game.craftingProfession, xpNeeded: craftingXpNeeded(game) },
+    craftingStats: {
+      ...craftingStats(game),
+      totalCrafts: game.lifetime.crafted,
+      materialsSaved: game.lifetime.craftingMaterialsSaved,
+      bonusOutputs: game.lifetime.craftingBonusOutputs,
+    },
     recipeLevels: Object.fromEntries(recipeData.map(recipe => [recipe.id, recipeLevel(recipe)])),
     professionStats: { woodcutting: professionStats(game, 'woodcutting'), mining: professionStats(game, 'mining') },
     effectiveDurations: Object.fromEntries(allResources.map(resource => [resource.id, effectiveDuration(game, resource)])),
