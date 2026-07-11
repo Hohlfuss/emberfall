@@ -44,6 +44,7 @@ type LeaderboardEntry = {
   name: string
   score: number
 }
+export type ChatMessage = { id: string; username: string; name: string; message: string; createdAt: string }
 
 const API_URL = (
   import.meta.env.VITE_API_URL || 'http://localhost:3000'
@@ -76,11 +77,15 @@ export function useGame() {
   const leaderboardRows = ref<LeaderboardEntry[]>([])
   const leaderboardLoading = ref(false)
   const leaderboardError = ref('')
+  const chatMessages = ref<ChatMessage[]>([])
+  const chatOnline = ref(0)
+  const chatError = ref('')
   const seenEventIds = new Set<number>()
   const toastTimers = new Map<number, ReturnType<typeof setTimeout>>()
   let nextToastId = 1
   let pollTimer: ReturnType<typeof setTimeout> | undefined
   let healthTimer: ReturnType<typeof setInterval> | undefined
+  let chatTimer: ReturnType<typeof setInterval> | undefined
   let requestRunning = false
 
   const emptyProfessionStats: ProfessionStats = { speed: 0, yield: 1, critChance: 0, critPower: 2, fortune: 0, precision: 0, xpBonus: 0 }
@@ -279,6 +284,40 @@ export function useGame() {
     }
   }
 
+  async function loadChat() {
+    if (!authToken.value) return
+    try {
+      const result = await readJson<{ messages: ChatMessage[]; online: number }>(
+        await fetch(apiUrl('/api/chat'), { headers: { Authorization: `Bearer ${authToken.value}` } }),
+      )
+      chatMessages.value = result.messages
+      chatOnline.value = result.online
+      chatError.value = ''
+    } catch (error) {
+      chatError.value = error instanceof Error ? error.message : 'Chat is unavailable.'
+    }
+  }
+
+  async function sendChat(message: string) {
+    if (!authToken.value) return false
+    try {
+      const result = await readJson<{ messages: ChatMessage[]; online: number }>(
+        await fetch(apiUrl('/api/chat'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken.value}` },
+          body: JSON.stringify({ message }),
+        }),
+      )
+      chatMessages.value = result.messages
+      chatOnline.value = result.online
+      chatError.value = ''
+      return true
+    } catch (error) {
+      chatError.value = error instanceof Error ? error.message : 'Could not send message.'
+      return false
+    }
+  }
+
   async function loadConfig() {
     config.value = await readJson<GameConfig>(
       await fetch(apiUrl('/api/config')),
@@ -330,6 +369,9 @@ export function useGame() {
       authToken.value = result.token
       applyServerState(result.state)
       startPolling()
+      void loadChat()
+      clearInterval(chatTimer)
+      chatTimer = setInterval(loadChat, 2000)
     } catch (error) {
       authError.value = error instanceof Error ? error.message : 'Authentication failed.'
     } finally { authLoading.value = false }
@@ -379,7 +421,7 @@ export function useGame() {
     healthTimer = setInterval(() => { if (!serverOnline.value) void connectBackend() }, 2000)
   })
   onBeforeUnmount(() => {
-    clearTimeout(pollTimer); clearInterval(healthTimer)
+    clearTimeout(pollTimer); clearInterval(healthTimer); clearInterval(chatTimer)
     toastTimers.forEach(timer => clearTimeout(timer)); toastTimers.clear()
   })
 
@@ -391,7 +433,8 @@ export function useGame() {
     workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, shopUpgrades, achievements, craftingId,
     craftFilter, filteredRecipes, storeListings, materialGroups, toasts,
     leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
+    chatMessages, chatOnline, chatError,
     professionStats, professionXpNeeded, isUnlocked, effectiveDuration, canCraft, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip, recipeTooltip,
-    submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, dismissToast, loadLeaderboard,
+    submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, dismissToast, loadLeaderboard, sendChat,
   }
 }

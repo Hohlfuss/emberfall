@@ -2,6 +2,7 @@
 import { nextTick, onMounted, onUpdated } from 'vue'
 import { useGame } from './useGame'
 import type { Skill } from './gameData'
+import ChatPanel from './ChatPanel.vue'
 
 const {
   tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authLoading, serverOnline, backendError, playerName, gold, level, xp, xpNeeded, message, player, combatStats, dps,
@@ -11,8 +12,9 @@ const {
   workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, shopUpgrades, achievements, craftingId,
   craftFilter, filteredRecipes, storeListings, materialGroups, toasts,
   leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
+  chatMessages, chatOnline, chatError,
   professionStats, professionXpNeeded, isUnlocked, effectiveDuration, canCraft, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip, recipeTooltip,
-  submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, dismissToast, loadLeaderboard,
+  submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, dismissToast, loadLeaderboard, sendChat,
 } = useGame()
 
 function refreshHoverTitles() {
@@ -75,6 +77,7 @@ onUpdated(refreshHoverTitles)
 
     <section v-else class="page-content"><div class="page-heading"><div><p class="eyebrow">SETTLEMENT MARKET</p><h1>Shop</h1><p>Each equipment shelf displays only your next unowned tier. Buying or crafting it advances that shelf.</p></div></div><div class="shop-grid"><div class="equipment-store"><h2>Equipment merchant</h2><div class="store-shelves"><article v-for="listing in storeListings" :key="listing.id" class="store-listing"><template v-if="listing.item"><b>{{ listing.item.icon }}</b><div><span class="tier">{{ listing.name }} · NEXT TIER {{ listing.item.tier }}</span><h3>{{ listing.item.name }}</h3><p>{{ listing.item.description }}</p><small>{{ Object.entries(listing.item.bonuses).map(([stat,value]) => formatBonus(stat, Number(value))).join(' · ') }}</small></div><button @click="buyStoreGear(listing)" :disabled="gold < listing.price || !!craftingId">BUY · {{ listing.price.toLocaleString() }} GOLD</button></template><template v-else><b>✓</b><div><span class="tier">{{ listing.name }}</span><h3>All tiers owned</h3><p>This shelf is complete.</p></div><button disabled>SOLD OUT</button></template></article></div></div><article class="shop-card worker-shop"><div class="worker-art">♟</div><div><span class="tier">PERMANENT WORKER</span><h2>Hire a Gatherer</h2><p>Assign to any unlocked material. Level 2 and level 10 each award one free worker.</p><small>Owned: {{ workers }}</small></div><button class="primary" @click="buyWorker" :disabled="gold < workerPrice">HIRE · {{ workerPrice.toLocaleString() }} GOLD</button></article><article v-for="upgrade in shopUpgradeDetails" :key="upgrade.id" class="service-card"><b>{{ upgrade.icon }}</b><div><span class="tier">RANK {{ shopUpgrades[upgrade.id] }} / {{ upgrade.max }}</span><h3>{{ upgrade.name }}</h3><p>{{ upgrade.description }}</p></div><button @click="buyShopUpgrade(upgrade)" :disabled="shopUpgrades[upgrade.id] >= upgrade.max || gold < shopUpgradeCost(upgrade)">{{ shopUpgrades[upgrade.id] >= upgrade.max ? 'MAXIMUM RANK' : `UPGRADE · ${shopUpgradeCost(upgrade).toLocaleString()} GOLD` }}</button></article></div></section>
   </main>
+  <ChatPanel v-if="playerName" :messages="chatMessages" :online="chatOnline" :error="chatError" @send="sendChat" />
   <Teleport to="body">
     <TransitionGroup name="toast" tag="div" class="toast-stack" aria-live="polite">
       <article v-for="toast in toasts" :key="toast.id" class="toast-card" :class="toast.kind" @click="dismissToast(toast.id)">

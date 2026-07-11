@@ -180,8 +180,21 @@ const tokens = new Map<
   {
     username: string
     gameId: string
+    lastSeen: number
   }
 >()
+
+type ChatMessage = {
+  id: string
+  username: string
+  name: string
+  message: string
+  createdAt: string
+}
+
+const chatMessages: ChatMessage[] = []
+const CHAT_LIMIT = 15
+const ONLINE_WINDOW_MS = 30_000
 
 const gameOwners = new Map<string, string>()
 
@@ -754,6 +767,7 @@ function issueToken(username: string, gameId: string): string {
   tokens.set(token, {
     username,
     gameId,
+    lastSeen: Date.now(),
   })
 
   return token
@@ -773,6 +787,8 @@ function authorizedGame(
   if (!session || session.gameId !== gameId) {
     return undefined
   }
+
+  session.lastSeen = Date.now()
 
   const game = games.get(gameId)
 
@@ -1022,6 +1038,54 @@ app.post('/api/games/:id/actions', async (request, response) => {
   }
 
   return response.json(state)
+})
+
+function chatSession(request: express.Request) {
+  const header = request.headers.authorization
+  const token = header?.startsWith('Bearer ') ? header.slice(7) : ''
+  const session = tokens.get(token)
+  if (session) session.lastSeen = Date.now()
+  return session
+}
+
+function onlineCount() {
+  const cutoff = Date.now() - ONLINE_WINDOW_MS
+  return new Set(
+    [...tokens.values()]
+      .filter(session => session.lastSeen >= cutoff)
+      .map(session => session.username),
+  ).size
+}
+
+app.get('/api/chat', (request, response) => {
+  const session = chatSession(request)
+  if (!session) return response.status(401).json({ error: 'Log in to use chat.' })
+  return response.json({ messages: chatMessages, online: onlineCount() })
+})
+
+app.post('/api/chat', (request, response) => {
+  const session = chatSession(request)
+  if (!session) return response.status(401).json({ error: 'Log in to use chat.' })
+
+  const message = typeof request.body?.message === 'string'
+    ? request.body.message.trim().replace(/\s+/g, ' ')
+    : ''
+  if (!message || message.length > 240) {
+    return response.status(400).json({ error: 'Messages must be between 1 and 240 characters.' })
+  }
+
+  const game = games.get(session.gameId)
+  const entry: ChatMessage = {
+    id: randomUUID(),
+    username: session.username,
+    name: game?.name || session.username,
+    message,
+    createdAt: new Date().toISOString(),
+  }
+  chatMessages.push(entry)
+  if (chatMessages.length > CHAT_LIMIT) chatMessages.splice(0, chatMessages.length - CHAT_LIMIT)
+
+  return response.status(201).json({ messages: chatMessages, online: onlineCount() })
 })
 
 app.get(
