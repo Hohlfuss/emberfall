@@ -7,12 +7,13 @@ import AuctionHouse from './AuctionHouse.vue'
 import CraftingProgress from './CraftingProgress.vue'
 import AutoBattleControl from './AutoBattleControl.vue'
 import CraftingInventoryStats from './CraftingInventoryStats.vue'
+import SalvageBuyer from './SalvageBuyer.vue'
 
 const {
   tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authLoading, serverOnline, backendError, playerName, gold, level, xp, xpNeeded, message, player, combatStats, dps,
   enemyTier, highestEnemyTier, enemy, battleStarted, autoBattle, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
   heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
-  woods, rocks, allResources, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, resourceMastery,
+  woods, rocks, allResources, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, sellPrices, resourceMastery,
   workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, shopUpgrades, achievements, craftingId,
   craftingProfession, craftingStats,
   craftFilter, filteredRecipes, storeListings, materialGroups, toasts,
@@ -20,11 +21,13 @@ const {
   chatMessages, chatOnline, chatError,
   auctionListings, auctionError,
   professionStats, professionXpNeeded, isUnlocked, effectiveDuration, canCraft, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip, recipeTooltip,
-  submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, dismissToast, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
+  submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, dismissToast, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
 } = useGame()
 
 function refreshHoverTitles() {
   void nextTick(() => {
+    const workerRewardText = document.querySelector<HTMLElement>('.worker-shop p')
+    if (workerRewardText) workerRewardText.textContent = 'Assign workers to unlocked materials. Every 10 player levels awards one free worker.'
     document.querySelectorAll<HTMLElement>('.resource-card').forEach((card, index) => {
       const resources = page.value === 'woodcutting' ? woods.value : rocks.value
       if (resources[index]) card.title = resourceTooltip(resources[index])
@@ -87,6 +90,9 @@ onUpdated(refreshHoverTitles)
   <CraftingProgress v-if="playerName && page === 'crafting'" :level="craftingProfession.level" :xp="craftingProfession.xp" :needed="craftingProfession.xpNeeded" />
   <Teleport v-if="playerName && page === 'inventory'" defer to=".inventory-column:last-child">
     <CraftingInventoryStats :profession="craftingProfession" :stats="craftingStats" />
+  </Teleport>
+  <Teleport v-if="playerName && page === 'shop'" defer to=".shop-grid">
+    <SalvageBuyer :inventory="inventory" :prices="sellPrices" @sell="sellItem" />
   </Teleport>
   <AuctionHouse v-if="playerName && page === 'auction'" :listings="auctionListings" :inventory="inventory" :gold="gold" :player-name="playerName" :error="auctionError" @refresh="loadAuction" @create="createAuction" @buy="buyAuction" @cancel="cancelAuction" />
   <ChatPanel v-if="playerName" :messages="chatMessages" :online="chatOnline" :error="chatError" @send="sendChat" />

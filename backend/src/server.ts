@@ -133,6 +133,7 @@ type Action =
   | { type: 'buyGear'; gearId: string }
   | { type: 'equipGear'; gearId: string }
   | { type: 'toggleAutoBattle'; enabled: boolean }
+  | { type: 'sellItem'; item: string; quantity: number }
 
 const storePaths = [
   { id: 'hatchets', name: 'Hatchets', icon: '🪓', items: ['pineHatchet', 'oakHatchet', 'mapleHatchet', 'yewHatchet'], prices: [175, 1800, 6500, 16000] },
@@ -311,6 +312,13 @@ function recipeLevel(recipe: Recipe) {
   if (recipe.outputGear) return Math.max(1, gearCatalog[recipe.outputGear]?.tier || 1)
   return Math.max(1, ...Object.keys(recipe.costs).map(item => allResources.find(resource => resource.item === item)?.tier || 1))
 }
+function itemSellPrice(item: string) {
+  const resource = allResources.find(candidate => candidate.item === item)
+  if (resource) return Math.max(1, resource.tier * 2)
+  if (['Ancient Resin', 'Ore Crystal', 'Rough Gem'].includes(item)) return 6
+  const recipe = recipeData.find(candidate => candidate.outputItem === item)
+  return recipe ? Math.max(2, recipeLevel(recipe) * 3) : 1
+}
 
 function totalBonuses(game: Game): Bonuses {
   const result: Record<string, number> = {}
@@ -418,7 +426,7 @@ function gainXp(game: Game, amount: number) {
     game.player.baseAttack += 2
     game.player.baseDefense += 1
     game.player.health = combatStats(game).maxHealth
-    if (game.level === 2 || game.level === 10) {
+    if (game.level % 10 === 0) {
       game.workers++
       game.message = `Level ${game.level}! A gatherer joined you as a level reward.`
     } else game.message = `Level up! ${game.name} reached level ${game.level}.`
@@ -765,6 +773,15 @@ function performAction(game: Game, action: Action, now: number) {
       game.autoBattle = action.enabled
       game.message = action.enabled ? 'Auto-Battle enabled.' : 'Auto-Battle disabled.'
       break
+    case 'sellItem': {
+      if (typeof action.item !== 'string' || !Number.isInteger(action.quantity) || action.quantity < 1) reject('Invalid sale.')
+      if ((game.inventory[action.item] || 0) < action.quantity) reject('You do not own enough of that item.')
+      const payout = itemSellPrice(action.item) * action.quantity
+      game.inventory[action.item] -= action.quantity
+      giveGold(game, payout)
+      game.message = `Sold ${action.quantity} × ${action.item} for ${payout} gold.`
+      break
+    }
     default:
       reject('Unknown action.')
   }
@@ -820,6 +837,7 @@ function publicState(game: Game, now = Date.now()) {
     professionStats: { woodcutting: professionStats(game, 'woodcutting'), mining: professionStats(game, 'mining') },
     effectiveDurations: Object.fromEntries(allResources.map(resource => [resource.id, effectiveDuration(game, resource)])),
     resourceMastery: game.resourceMastery, jobs, inventory: game.inventory,
+    sellPrices: Object.fromEntries(Object.keys(game.inventory).map(item => [item, itemSellPrice(item)])),
     workers: game.workers, workerPrice: workerPrice(game), workerAssignments: game.workerAssignments, workerProgress: game.workerProgress,
     assignedWorkers, freeWorkers: game.workers - assignedWorkers,
     equipment: game.equipment, ownedGear: game.ownedGear, shopUpgrades: game.shopUpgrades,
