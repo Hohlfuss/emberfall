@@ -818,14 +818,19 @@ function performAction(game: Game, action: Action, now: number) {
       if (recipe.outputGear && game.ownedGear.includes(recipe.outputGear)) reject('That equipment is already owned.')
       if (!Object.entries(recipe.costs).every(([item, cost]) => (game.inventory[item] || 0) >= cost)) reject('Not enough materials.')
       const craftStats = craftingStats(game)
+      const receipt: string[] = []
       Object.entries(recipe.costs).forEach(([item, cost]) => {
         const saved = Math.random() * 100 < craftStats.conservationChance ? 1 : 0
-        game.inventory[item] -= cost - saved
+        const before = Number(game.inventory[item] || 0)
+        const spent = Math.max(0, Number(cost) - saved)
+        game.inventory[item] = before - spent
+        if (!Number.isFinite(game.inventory[item]) || game.inventory[item] < 0) reject(`Invalid inventory state for ${item}.`)
         game.lifetime.craftingMaterialsSaved += saved
+        receipt.push(`${spent} ${item}${saved ? ' (1 conserved)' : ''}`)
       })
       const duration = recipe.duration * (1 - craftStats.speed / 100)
       game.crafting = { recipeId: recipe.id, startedAt: now, endsAt: now + duration * 1000, duration }
-      game.message = `Crafting ${recipe.name}...`
+      game.message = `Crafting ${recipe.name}... Used ${receipt.join(' · ')}.`
       break
     }
     case 'assignWorker': {
