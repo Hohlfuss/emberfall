@@ -343,9 +343,9 @@ async function saveGame(
   }
 }
 
-function xpNeeded(game: Game) { return 100 + (game.level - 1) * 60 }
-function professionXpNeeded(game: Game, skill: Skill) { return Math.round(15 * game.professions[skill].level ** 1.5) }
-function craftingXpNeeded(game: Game) { return Math.round(35 * game.craftingProfession.level ** 1.45) }
+function xpNeeded(game: Game) { return Math.round(140 + 85 * (game.level - 1) ** 1.55) }
+function professionXpNeeded(game: Game, skill: Skill) { return Math.round(55 * game.professions[skill].level ** 1.8) }
+function craftingXpNeeded(game: Game) { return Math.round(70 * game.craftingProfession.level ** 1.7) }
 function craftingStats(game: Game) {
   const level = game.craftingProfession.level
   return {
@@ -354,9 +354,15 @@ function craftingStats(game: Game) {
     bonusOutputChance: Math.min(15, Math.floor((level - 1) / 3) * 2.5),
   }
 }
-function recipeLevel(recipe: Recipe) {
+function recipeLevel(recipe: Recipe, seen = new Set<string>()): number {
   if (recipe.outputGear) return Math.max(1, gearCatalog[recipe.outputGear]?.tier || 1)
-  return Math.max(1, ...Object.keys(recipe.costs).map(item => allResources.find(resource => resource.item === item)?.tier || 1))
+  if (seen.has(recipe.id)) return 1
+  seen.add(recipe.id)
+  return Math.max(1, ...Object.keys(recipe.costs).map(item => {
+    const resourceTier = allResources.find(resource => resource.item === item)?.tier
+    const componentRecipe = recipeData.find(candidate => candidate.outputItem === item)
+    return resourceTier || (componentRecipe ? recipeLevel(componentRecipe, seen) : 1)
+  }))
 }
 function itemSellPrice(item: string) {
   const resource = allResources.find(candidate => candidate.item === item)
@@ -388,9 +394,9 @@ function gainFactionReputation(game: Game, factionId: FactionId, amount: number)
   const definition = factionDefinitions.find(faction => faction.id === factionId)!
   while (progress.rank < definition.ranks.length && progress.reputation >= definition.ranks[progress.rank]!) {
     progress.rank++
-    giveGold(game, progress.rank * 100)
+    giveGold(game, progress.rank * 40)
     if (progress.rank === 4) game.workers++
-    pushEvent(game, 'achievement', `${definition.name} Rank ${progress.rank}`, `${definition.rewards[progress.rank - 1]} · +${progress.rank * 100} gold${progress.rank === 4 ? ' · +1 worker' : ''}`)
+    pushEvent(game, 'achievement', `${definition.name} Rank ${progress.rank}`, `${definition.rewards[progress.rank - 1]} · +${progress.rank * 40} gold${progress.rank === 4 ? ' · +1 worker' : ''}`)
   }
 }
 
@@ -412,13 +418,13 @@ function professionStats(game: Game, skill: Skill) {
   const bonuses = totalBonuses(game)
   const prefix = skill === 'woodcutting' ? 'wood' : 'mining'
   return {
-    speed: Math.min(400, (profession.level - 1) * 2 + (bonuses[`${prefix}Speed` as keyof Bonuses] || 0)),
-    yield: 1 + Math.floor((profession.level - 1) / 5) + (bonuses[`${prefix}Yield` as keyof Bonuses] || 0),
-    critChance: Math.min(60, 5 + (profession.level - 1) * .75 + (bonuses[`${prefix}Crit` as keyof Bonuses] || 0)),
-    critPower: 2 + (bonuses.critPower || 0),
-    fortune: Math.min(35, 2 + Math.floor(profession.level / 3) + (bonuses.fortune || 0)),
-    precision: Math.min(30, 3 + (profession.level - 1) * .5),
-    xpBonus: (profession.level - 1) * 2,
+    speed: Math.min(180, (profession.level - 1) * 1.25 + (bonuses[`${prefix}Speed` as keyof Bonuses] || 0)),
+    yield: Math.min(5, 1 + Math.floor((profession.level - 1) / 12) + Math.min(2, bonuses[`${prefix}Yield` as keyof Bonuses] || 0)),
+    critChance: Math.min(30, 3 + (profession.level - 1) * .35 + (bonuses[`${prefix}Crit` as keyof Bonuses] || 0)),
+    critPower: Math.min(2.5, 1.5 + (bonuses.critPower || 0)),
+    fortune: Math.min(20, 1 + Math.floor(profession.level / 5) + (bonuses.fortune || 0)),
+    precision: Math.min(15, 2 + (profession.level - 1) * .25),
+    xpBonus: Math.min(30, (profession.level - 1) * .75),
   }
 }
 
@@ -447,9 +453,10 @@ function checkAchievements(game: Game) {
   achievementDefinitions.forEach(achievement => {
     if (!game.unlockedAchievements.has(achievement.id) && achievementProgress(game, achievement) >= achievement.goal) {
       game.unlockedAchievements.add(achievement.id)
-      giveGold(game, achievement.reward)
-      game.message = `Achievement unlocked: ${achievement.name}! +${achievement.reward} gold.`
-      pushEvent(game, 'achievement', achievement.name, `Achievement unlocked · +${achievement.reward} gold`)
+      const reward = Math.max(10, Math.round(achievement.reward * .35))
+      giveGold(game, reward)
+      game.message = `Achievement unlocked: ${achievement.name}! +${reward} gold.`
+      pushEvent(game, 'achievement', achievement.name, `Achievement unlocked · +${reward} gold`)
     }
   })
 }
@@ -461,13 +468,13 @@ function rollEnemy(game: Game) {
   const baseName = enemyNames[Math.min(enemyNames.length - 1, Math.floor(power / 3))] ?? enemyNames[0]!
   game.enemy.archetype = archetype.name
   game.enemy.name = game.enemyTier >= 15 ? `Ancient ${baseName}` : game.enemyTier >= 7 ? `Dire ${baseName}` : baseName
-  game.enemy.maxHealth = Math.round(90 * 1.18 ** power * variance() * archetype.health)
+  game.enemy.maxHealth = Math.round(90 * 1.32 ** power * variance() * archetype.health)
   game.enemy.health = game.enemy.maxHealth
-  game.enemy.attack = Math.max(1, Math.round(16 * 1.08 ** power * variance() * archetype.attack))
-  game.enemy.defense = Math.floor(power * .9 + Math.random() * 2) + archetype.defense
-  game.enemy.attackSpeed = Math.max(1200, Math.min(3400, Math.round((2150 + Math.random() * 300) * archetype.interval / (1 + power * .015))))
-  game.enemy.xp = Math.round(45 * 1.25 ** power * variance() * archetype.reward)
-  game.enemy.gold = Math.round(22 * 1.28 ** power * variance() * archetype.reward)
+  game.enemy.attack = Math.max(1, Math.round(16 * 1.18 ** power * variance() * archetype.attack))
+  game.enemy.defense = Math.floor(power * 1.6 + power ** 1.25 * .35 + Math.random() * 2) + archetype.defense
+  game.enemy.attackSpeed = Math.max(850, Math.min(3400, Math.round((2150 + Math.random() * 300) * archetype.interval / (1 + power * .025))))
+  game.enemy.xp = Math.round(24 * 1.13 ** power * variance() * archetype.reward)
+  game.enemy.gold = Math.round(8 * 1.12 ** power * variance() * archetype.reward)
 }
 
 function startEnemyLoad(game: Game, now: number, status: string) {
@@ -487,9 +494,9 @@ function gainXp(game: Game, amount: number) {
   while (game.xp >= xpNeeded(game)) {
     game.xp -= xpNeeded(game)
     game.level++
-    game.player.baseMaxHealth += 10
-    game.player.baseAttack += 2
-    game.player.baseDefense += 1
+    game.player.baseMaxHealth += 5
+    game.player.baseAttack += 1
+    if (game.level % 2 === 0) game.player.baseDefense += 1
     game.player.health = combatStats(game).maxHealth
     if (game.level % 10 === 0) {
       game.workers++
@@ -509,7 +516,7 @@ function giveResource(game: Game, resource: Resource, amount: number, allowRare 
     game.inventory[rare] = (game.inventory[rare] || 0) + 1
     game.message = `Rare find: ${rare}!`
   }
-  const gainedXp = Math.ceil((4 + resource.tier * 4) * amount * (1 + stats.xpBonus / 100))
+  const gainedXp = Math.ceil((3 + resource.tier * 2) * (1 + stats.xpBonus / 100))
   game.professions[resource.skill].xp += gainedXp
   while (game.professions[resource.skill].xp >= professionXpNeeded(game, resource.skill) && game.professions[resource.skill].level < 50) {
     game.professions[resource.skill].xp -= professionXpNeeded(game, resource.skill)
@@ -728,8 +735,9 @@ function syncDailyObjectives(game: Game, now = Date.now()) {
     const progress = Math.max(0, values[objective.metric] - game.daily.baseline[objective.metric])
     if (progress >= objective.target && !game.daily.completed.includes(objective.id)) {
       game.daily.completed.push(objective.id)
-      giveGold(game, objective.reward)
-      pushEvent(game, 'achievement', 'Daily objective complete', `${objective.label} · +${objective.reward} gold`)
+      const reward = Math.round(objective.reward * .5)
+      giveGold(game, reward)
+      pushEvent(game, 'achievement', 'Daily objective complete', `${objective.label} · +${reward} gold`)
     }
   })
 }
@@ -969,11 +977,11 @@ function publicState(game: Game, now = Date.now()) {
     equipment: game.equipment, ownedGear: game.ownedGear, unlockedGear: game.unlockedGear, shopUpgrades: game.shopUpgrades,
     gearSellPrices: Object.fromEntries(game.ownedGear.map(id => [id, Math.max(5, (gearCatalog[id]?.tier || 0) * 30)])),
     alliedFaction: game.alliedFaction, factions: game.factions,
-    dailyObjectives: dailyObjectives(game).map(objective => ({ ...objective, progress: Math.min(objective.target, Math.max(0, dailyMetricValues(game.lifetime)[objective.metric] - game.daily.baseline[objective.metric])), completed: game.daily.completed.includes(objective.id) })),
+    dailyObjectives: dailyObjectives(game).map(objective => ({ ...objective, reward: Math.round(objective.reward * .5), progress: Math.min(objective.target, Math.max(0, dailyMetricValues(game.lifetime)[objective.metric] - game.daily.baseline[objective.metric])), completed: game.daily.completed.includes(objective.id) })),
     dailyResetAt: Date.parse(`${game.daily.date}T00:00:00Z`) + 86_400_000,
     shopUpgradeCosts: Object.fromEntries(shopUpgradeDetails.map(upgrade => [upgrade.id, shopUpgradeCost(game, upgrade)])),
     crafting, nextGearIds: nextGearIds(game),
-    achievements: achievementDefinitions.map(achievement => ({ ...achievement, progress: achievementProgress(game, achievement), unlocked: game.unlockedAchievements.has(achievement.id) })),
+    achievements: achievementDefinitions.map(achievement => ({ ...achievement, reward: Math.max(10, Math.round(achievement.reward * .35)), progress: achievementProgress(game, achievement), unlocked: game.unlockedAchievements.has(achievement.id) })),
     events: game.events,
   }
 }
