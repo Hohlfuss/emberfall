@@ -43,6 +43,7 @@ type ServerState = {
   crafting: { id: string; progress: number } | null
   nextGearIds: string[]; achievements: Achievement[]; events: GameEvent[]
   alliedFaction: FactionId | null; factions: Record<FactionId, { reputation: number; rank: number }>
+  dailyObjectives: Array<{ id: string; label: string; target: number; reward: number; icon: string; progress: number; completed: boolean }>; dailyResetAt: number
 }
 type Toast = { id: number; kind: GameEvent['kind']; title: string; detail: string }
 type LeaderboardCategory = 'level' | 'gold' | 'woodcutting' | 'mining' | 'clicks' | 'kills' | 'gathered' | 'crafted'
@@ -162,6 +163,8 @@ export function useGame() {
   const factionDefinitions = computed(() => config.value?.factionDefinitions || [])
   const alliedFaction = computed(() => state.value?.alliedFaction || null)
   const factions = computed(() => state.value?.factions || { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } })
+  const dailyObjectives = computed(() => state.value?.dailyObjectives || [])
+  const dailyResetAt = computed(() => state.value?.dailyResetAt || Date.now())
   const craftingProfession = computed(() => state.value?.craftingProfession || { level: 1, xp: 0, xpNeeded: 35 })
   const craftingStats = computed(() => state.value?.craftingStats || { speed: 0, conservationChance: 0, bonusOutputChance: 0, totalCrafts: 0, materialsSaved: 0, bonusOutputs: 0 })
   const craftingId = computed(() => state.value?.crafting?.id || '')
@@ -481,7 +484,7 @@ export function useGame() {
     enemyTier, highestEnemyTier, enemy, battleStarted, autoBattle, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
     heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
     woods, rocks, allResources, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, sellPrices, resourceMastery,
-    workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId, craftingProfession, craftingStats, factionDefinitions, alliedFaction, factions,
+    workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId, craftingProfession, craftingStats, factionDefinitions, alliedFaction, factions, dailyObjectives, dailyResetAt,
     craftFilter, filteredRecipes, storeListings, materialGroups, toasts,
     leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
     chatMessages, chatOnline, chatError,

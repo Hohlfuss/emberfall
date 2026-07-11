@@ -9,6 +9,7 @@ import AutoBattleControl from './AutoBattleControl.vue'
 import CraftingInventoryStats from './CraftingInventoryStats.vue'
 import SalvageBuyer from './SalvageBuyer.vue'
 import FactionsPage from './FactionsPage.vue'
+import DailyObjectives from './DailyObjectives.vue'
 
 const {
   tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authLoading, serverOnline, backendError, playerName, gold, level, xp, xpNeeded, message, player, combatStats, dps,
@@ -18,6 +19,7 @@ const {
   workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId,
   craftingProfession, craftingStats,
   factionDefinitions, alliedFaction, factions,
+  dailyObjectives, dailyResetAt,
   craftFilter, filteredRecipes, storeListings, materialGroups, toasts,
   leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
   chatMessages, chatOnline, chatError,
@@ -95,6 +97,9 @@ onUpdated(refreshHoverTitles)
   </Teleport>
   <Teleport v-if="playerName && page === 'shop'" defer to=".shop-grid">
     <SalvageBuyer :inventory="inventory" :prices="sellPrices" :gear="ownedGear.map(id => ({ id, name: gearCatalog[id].name, icon: gearCatalog[id].icon, equipped: equipment[gearCatalog[id].slot] === id, price: gearSellPrices[id] || 5 }))" @sell="sellItem" @sell-gear="sellGear" />
+  </Teleport>
+  <Teleport v-if="playerName && page === 'achievements'" defer to=".achievement-grid">
+    <DailyObjectives :objectives="dailyObjectives" :reset-at="dailyResetAt" />
   </Teleport>
   <AuctionHouse v-if="playerName && page === 'auction'" :listings="auctionListings" :inventory="inventory" :gold="gold" :player-name="playerName" :error="auctionError" @refresh="loadAuction" @create="createAuction" @buy="buyAuction" @cancel="cancelAuction" />
   <FactionsPage v-if="playerName && page === 'factions'" :definitions="factionDefinitions" :progress="factions" :allied="alliedFaction" :level="level" @ally="allyFaction" />

@@ -60,13 +60,15 @@ type Enemy = { name: string; archetype: string; health: number; maxHealth: numbe
 type ShopUpgrade = 'medic' | 'scouting' | 'training' | 'fortitude' | 'autoBattle'
 type EventKind = 'achievement' | 'critical'
 type GameEvent = { id: number; kind: EventKind; title: string; detail: string }
-type AchievementKind = 'level' | 'kills' | 'deaths' | 'tier' | 'gathered' | 'crafted' | 'workers' | 'woodLevel' | 'mineLevel' | 'gear'
+type AchievementKind = 'level' | 'kills' | 'deaths' | 'tier' | 'gathered' | 'crafted' | 'workers' | 'woodLevel' | 'mineLevel' | 'gear' | 'actions' | 'goldEarned' | 'goldSpent'
 type AchievementDefinition = { id: string; name: string; description: string; kind: AchievementKind; goal: number; reward: number; icon: string }
 type GatherJob = { resourceId: string; startedAt: number; endsAt: number; critical: boolean; duration: number }
 type CraftJob = { recipeId: string; startedAt: number; endsAt: number; duration: number }
 type TimedState = { startedAt: number; endsAt: number }
 type FactionId = 'wardens' | 'delvers' | 'vanguard'
 type FactionProgress = { reputation: number; rank: number }
+type DailyMetric = 'kills' | 'gathered' | 'crafted' | 'actions' | 'goldEarned'
+type DailyState = { date: string; baseline: Record<DailyMetric, number>; completed: string[] }
 
 type Game = {
   id: string
@@ -106,6 +108,7 @@ type Game = {
   lifetime: LifetimeStats
   alliedFaction: FactionId | null
   factions: Record<FactionId, FactionProgress>
+  daily: DailyState
 }
 
 type LifetimeStats = {
@@ -148,6 +151,17 @@ const factionDefinitions = [
   { id: 'vanguard', name: 'Ember Vanguard', icon: '🔥', unlockLevel: 7, description: 'Monster hunters defending Emberfall. Reputation comes from victories.', ranks: [50, 175, 450, 900], rewards: ['+3 Attack', '+3 Defense', '+20 maximum health', '+8 Attack'] },
 ] as const
 
+const dailyObjectivePool = [
+  { id: 'hunt5', metric: 'kills', label: 'Win 5 battles', target: 5, reward: 90, icon: '⚔️' },
+  { id: 'hunt15', metric: 'kills', label: 'Win 15 battles', target: 15, reward: 225, icon: '🐺' },
+  { id: 'gather40', metric: 'gathered', label: 'Gather 40 materials', target: 40, reward: 80, icon: '🪵' },
+  { id: 'gather120', metric: 'gathered', label: 'Gather 120 materials', target: 120, reward: 210, icon: '⛏️' },
+  { id: 'craft3', metric: 'crafted', label: 'Complete 3 recipes', target: 3, reward: 100, icon: '🔨' },
+  { id: 'craft8', metric: 'crafted', label: 'Complete 8 recipes', target: 8, reward: 240, icon: '🔥' },
+  { id: 'actions30', metric: 'actions', label: 'Perform 30 actions', target: 30, reward: 75, icon: '✦' },
+  { id: 'earn250', metric: 'goldEarned', label: 'Earn 250 gold', target: 250, reward: 125, icon: '◈' },
+] as const satisfies ReadonlyArray<{ id: string; metric: DailyMetric; label: string; target: number; reward: number; icon: string }>
+
 const storePaths = [
   { id: 'hatchets', name: 'Hatchets', icon: '🪓', items: ['pineHatchet', 'oakHatchet', 'mapleHatchet', 'yewHatchet'], prices: [175, 1800, 6500, 16000] },
   { id: 'pickaxes', name: 'Pickaxes', icon: '⛏️', items: ['copperPickaxe', 'ironPickaxe', 'silverPickaxe', 'mythrilPickaxe'], prices: [200, 2000, 9000, 32000] },
@@ -184,6 +198,21 @@ const achievementDefinitions: AchievementDefinition[] = [
   { id: 'lumberFive', name: 'Forest Adept', description: 'Reach woodcutting level 5.', kind: 'woodLevel', goal: 5, reward: 100, icon: '🌲' },
   { id: 'mineFive', name: 'Deep Delver', description: 'Reach mining level 5.', kind: 'mineLevel', goal: 5, reward: 100, icon: '💎' },
   { id: 'gearFive', name: 'Well Equipped', description: 'Own 5 crafted or starter items.', kind: 'gear', goal: 5, reward: 100, icon: '🛡️' },
+  { id: 'levelTen', name: 'Veteran Adventurer', description: 'Reach player level 10.', kind: 'level', goal: 10, reward: 400, icon: '🏅' },
+  { id: 'levelTwentyFive', name: 'Living Legend', description: 'Reach player level 25.', kind: 'level', goal: 25, reward: 1500, icon: '👑' },
+  { id: 'killsHundred', name: 'Arena Centurion', description: 'Defeat 100 monsters.', kind: 'kills', goal: 100, reward: 750, icon: '🩸' },
+  { id: 'killsThousand', name: 'Bane of Monsters', description: 'Defeat 1,000 monsters.', kind: 'kills', goal: 1000, reward: 5000, icon: '🐉' },
+  { id: 'tierTwenty', name: 'Beyond the Veil', description: 'Unlock enemy tier 20.', kind: 'tier', goal: 20, reward: 2000, icon: '🌀' },
+  { id: 'gatherTenThousand', name: 'Nature Bends', description: 'Gather 10,000 materials.', kind: 'gathered', goal: 10000, reward: 3500, icon: '🌍' },
+  { id: 'craftFifty', name: 'Master Artisan', description: 'Complete 50 recipes.', kind: 'crafted', goal: 50, reward: 900, icon: '⚒️' },
+  { id: 'craftFiveHundred', name: 'Forge Eternal', description: 'Complete 500 recipes.', kind: 'crafted', goal: 500, reward: 6000, icon: '🌋' },
+  { id: 'tenWorkers', name: 'Industrial Power', description: 'Own 10 workers.', kind: 'workers', goal: 10, reward: 1800, icon: '🏭' },
+  { id: 'actionsThousand', name: 'Restless Hands', description: 'Perform 1,000 game actions.', kind: 'actions', goal: 1000, reward: 700, icon: '🖱️' },
+  { id: 'actionsTenThousand', name: 'Unstoppable', description: 'Perform 10,000 game actions.', kind: 'actions', goal: 10000, reward: 4500, icon: '⚡' },
+  { id: 'earnTenThousand', name: 'Golden Ambition', description: 'Earn 10,000 total gold.', kind: 'goldEarned', goal: 10000, reward: 1000, icon: '💰' },
+  { id: 'spendTenThousand', name: 'Patron of Emberfall', description: 'Spend 10,000 total gold.', kind: 'goldSpent', goal: 10000, reward: 800, icon: '🏛️' },
+  { id: 'woodTwenty', name: 'Warden of Timber', description: 'Reach woodcutting level 20.', kind: 'woodLevel', goal: 20, reward: 1200, icon: '🌳' },
+  { id: 'mineTwenty', name: 'Heart of the Mountain', description: 'Reach mining level 20.', kind: 'mineLevel', goal: 20, reward: 1200, icon: '🏔️' },
 ]
 
 const enemyArchetypes = [
@@ -245,6 +274,7 @@ function deserializeGame(value: unknown): Game {
     unlockedGear: stored.unlockedGear ?? [...(stored.ownedGear ?? [])],
     alliedFaction: stored.alliedFaction ?? null,
     factions: stored.factions ?? { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } },
+    daily: stored.daily ?? createDailyState(stored.lifetime ?? createLifetimeStats()),
     shopUpgrades: {
       medic: stored.shopUpgrades?.medic ?? 0,
       scouting: stored.shopUpgrades?.scouting ?? 0,
@@ -408,6 +438,7 @@ function achievementProgress(game: Game, achievement: AchievementDefinition) {
     level: game.level, kills: game.lifetime.kills, deaths: game.lifetime.deaths, tier: game.highestEnemyTier,
     gathered: game.lifetime.gathered, crafted: game.lifetime.crafted, workers: game.workers,
     woodLevel: game.professions.woodcutting.level, mineLevel: game.professions.mining.level, gear: game.ownedGear.length,
+    actions: game.lifetime.totalClicks, goldEarned: game.lifetime.goldEarned, goldSpent: game.lifetime.goldSpent,
   }
   return Math.min(achievement.goal, values[achievement.kind])
 }
@@ -601,6 +632,7 @@ function advanceCombat(game: Game, now: number) {
 }
 
 function advanceGame(game: Game, now = Date.now()) {
+  syncDailyObjectives(game, now)
   const elapsed = Math.max(0, now - game.lastAdvancedAt)
   game.lastAdvancedAt = now
 
@@ -678,6 +710,30 @@ function createLifetimeStats(): LifetimeStats {
   }
 }
 
+function dailyDate(now = Date.now()) { return new Date(now).toISOString().slice(0, 10) }
+function dailyMetricValues(lifetime: LifetimeStats): Record<DailyMetric, number> {
+  return { kills: lifetime.kills, gathered: lifetime.gathered, crafted: lifetime.crafted, actions: lifetime.totalClicks, goldEarned: lifetime.goldEarned }
+}
+function createDailyState(lifetime: LifetimeStats, now = Date.now()): DailyState {
+  return { date: dailyDate(now), baseline: dailyMetricValues(lifetime), completed: [] }
+}
+function dailyObjectives(game: Game) {
+  const day = Math.floor(Date.parse(`${game.daily.date}T00:00:00Z`) / 86_400_000)
+  return [0, 3, 5].map(offset => dailyObjectivePool[(day + offset) % dailyObjectivePool.length]!)
+}
+function syncDailyObjectives(game: Game, now = Date.now()) {
+  if (game.daily.date !== dailyDate(now)) game.daily = createDailyState(game.lifetime, now)
+  const values = dailyMetricValues(game.lifetime)
+  dailyObjectives(game).forEach(objective => {
+    const progress = Math.max(0, values[objective.metric] - game.daily.baseline[objective.metric])
+    if (progress >= objective.target && !game.daily.completed.includes(objective.id)) {
+      game.daily.completed.push(objective.id)
+      giveGold(game, objective.reward)
+      pushEvent(game, 'achievement', 'Daily objective complete', `${objective.label} · +${objective.reward} gold`)
+    }
+  })
+}
+
 function createGame(name: string): Game {
   const now = Date.now()
   const game: Game = {
@@ -688,7 +744,7 @@ function createGame(name: string): Game {
     equipment: { weapon: 'rustySword', helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: 'crackedPickaxe', hatchet: 'wornHatchet' },
     professions: { woodcutting: { level: 1, xp: 0 }, mining: { level: 1, xp: 0 } }, craftingProfession: { level: 1, xp: 0 }, resourceMastery: {}, jobs: {},
     workerAssignments: {}, workerProgress: {}, workers: 0, shopUpgrades: { medic: 0, scouting: 0, training: 0, fortitude: 0, autoBattle: 0 },
-    unlockedAchievements: new Set(), alliedFaction: null, factions: { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } },
+    unlockedAchievements: new Set(), alliedFaction: null, factions: { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } }, daily: createDailyState(createLifetimeStats()),
     lifetime: createLifetimeStats(),
     enemyTier: 1, highestEnemyTier: 1, enemy: { name: 'Loading...', archetype: '', health: 0, maxHealth: 1, attack: 0, defense: 0, attackSpeed: 0, xp: 0, gold: 0 },
     battleActive: false, autoBattle: false, nextPlayerAttackAt: 0, nextEnemyAttackAt: 0, recovery: null, enemyLoad: null, crafting: null,
@@ -913,6 +969,8 @@ function publicState(game: Game, now = Date.now()) {
     equipment: game.equipment, ownedGear: game.ownedGear, unlockedGear: game.unlockedGear, shopUpgrades: game.shopUpgrades,
     gearSellPrices: Object.fromEntries(game.ownedGear.map(id => [id, Math.max(5, (gearCatalog[id]?.tier || 0) * 30)])),
     alliedFaction: game.alliedFaction, factions: game.factions,
+    dailyObjectives: dailyObjectives(game).map(objective => ({ ...objective, progress: Math.min(objective.target, Math.max(0, dailyMetricValues(game.lifetime)[objective.metric] - game.daily.baseline[objective.metric])), completed: game.daily.completed.includes(objective.id) })),
+    dailyResetAt: Date.parse(`${game.daily.date}T00:00:00Z`) + 86_400_000,
     shopUpgradeCosts: Object.fromEntries(shopUpgradeDetails.map(upgrade => [upgrade.id, shopUpgradeCost(game, upgrade)])),
     crafting, nextGearIds: nextGearIds(game),
     achievements: achievementDefinitions.map(achievement => ({ ...achievement, progress: achievementProgress(game, achievement), unlocked: game.unlockedAchievements.has(achievement.id) })),
