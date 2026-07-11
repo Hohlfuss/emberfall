@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-const props = defineProps<{ inventory: Record<string, number>; prices: Record<string, number> }>()
-const emit = defineEmits<{ sell: [item: string, quantity: number] }>()
+const props = defineProps<{ inventory: Record<string, number>; prices: Record<string, number>; gear: Array<{ id: string; name: string; icon: string; equipped: boolean; price: number }> }>()
+const emit = defineEmits<{ sell: [item: string, quantity: number]; sellGear: [id: string] }>()
 const item = ref('')
 const quantity = ref(1)
 const items = computed(() => Object.entries(props.inventory).filter(([, count]) => count > 0).sort(([a], [b]) => a.localeCompare(b)))
@@ -24,5 +24,12 @@ function sell() {
       <div class="salvage-total"><span>You receive</span><strong>{{ (unitPrice * quantity).toLocaleString() }} gold</strong></div>
       <button :disabled="!item || quantity < 1">SELL NOW</button>
     </form>
+    <div v-if="gear.length" class="salvage-gear">
+      <h3>Old equipment</h3>
+      <article v-for="entry in gear" :key="entry.id">
+        <b>{{ entry.icon }}</b><span>{{ entry.name }}<small>{{ entry.equipped ? 'Currently equipped' : `${entry.price} gold` }}</small></span>
+        <button type="button" :disabled="entry.equipped" @click="emit('sellGear', entry.id)">{{ entry.equipped ? 'EQUIPPED' : 'SELL' }}</button>
+      </article>
+    </div>
   </section>
 </template>

@@ -78,6 +78,7 @@ type Game = {
   player: { health: number; baseMaxHealth: number; baseAttack: number; baseDefense: number; baseAttackSpeed: number; baseRecoveryTime: number; baseEnemyLoadTime: number; basePassiveRegen: number; regenBuffer: number }
   inventory: Record<string, number>
   ownedGear: string[]
+  unlockedGear: string[]
   equipment: Record<GearSlot, string | undefined>
   professions: Record<Skill, Profession>
   craftingProfession: Profession
@@ -134,6 +135,7 @@ type Action =
   | { type: 'equipGear'; gearId: string }
   | { type: 'toggleAutoBattle'; enabled: boolean }
   | { type: 'sellItem'; item: string; quantity: number }
+  | { type: 'sellGear'; gearId: string }
 
 const storePaths = [
   { id: 'hatchets', name: 'Hatchets', icon: '🪓', items: ['pineHatchet', 'oakHatchet', 'mapleHatchet', 'yewHatchet'], prices: [175, 1800, 6500, 16000] },
@@ -229,6 +231,7 @@ function deserializeGame(value: unknown): Game {
 
     craftingProfession: stored.craftingProfession ?? { level: 1, xp: 0 },
     autoBattle: stored.autoBattle ?? false,
+    unlockedGear: stored.unlockedGear ?? [...(stored.ownedGear ?? [])],
     shopUpgrades: {
       medic: stored.shopUpgrades?.medic ?? 0,
       scouting: stored.shopUpgrades?.scouting ?? 0,
@@ -455,7 +458,7 @@ function giveResource(game: Game, resource: Resource, amount: number, allowRare 
 }
 
 function nextGearIds(game: Game) {
-  return storePaths.map(path => path.items.find(id => !game.ownedGear.includes(id))).filter((id): id is string => Boolean(id))
+  return storePaths.map(path => path.items.find(id => !game.unlockedGear.includes(id))).filter((id): id is string => Boolean(id))
 }
 
 function shopUpgradeCost(game: Game, upgrade: typeof shopUpgradeDetails[number]) {
@@ -496,7 +499,10 @@ function completeCraft(game: Game) {
     }
     game.inventory[recipe.outputItem] = (game.inventory[recipe.outputItem] || 0) + quantity
   }
-  if (recipe.outputGear && !game.ownedGear.includes(recipe.outputGear)) game.ownedGear.push(recipe.outputGear)
+  if (recipe.outputGear && !game.ownedGear.includes(recipe.outputGear)) {
+    game.ownedGear.push(recipe.outputGear)
+    if (!game.unlockedGear.includes(recipe.outputGear)) game.unlockedGear.push(recipe.outputGear)
+  }
   game.craftingProfession.xp += 8 + recipeLevel(recipe) * 6
   while (game.craftingProfession.xp >= craftingXpNeeded(game) && game.craftingProfession.level < 25) {
     game.craftingProfession.xp -= craftingXpNeeded(game)
@@ -633,7 +639,7 @@ function createGame(name: string): Game {
     id: randomUUID(), revision: 0, lastAdvancedAt: now, name, gold: 0, level: 1, xp: 0,
     message: `Welcome, ${name}. Your adventure begins.`,
     player: { health: 100, baseMaxHealth: 100, baseAttack: 10, baseDefense: 3, baseAttackSpeed: 1800, baseRecoveryTime: 10000, baseEnemyLoadTime: 2000, basePassiveRegen: .2, regenBuffer: 0 },
-    inventory: {}, ownedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe'],
+    inventory: {}, ownedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe'], unlockedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe'],
     equipment: { weapon: 'rustySword', helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: 'crackedPickaxe', hatchet: 'wornHatchet' },
     professions: { woodcutting: { level: 1, xp: 0 }, mining: { level: 1, xp: 0 } }, craftingProfession: { level: 1, xp: 0 }, resourceMastery: {}, jobs: {},
     workerAssignments: {}, workerProgress: {}, workers: 0, shopUpgrades: { medic: 0, scouting: 0, training: 0, fortitude: 0, autoBattle: 0 },
@@ -750,12 +756,13 @@ function performAction(game: Game, action: Action, now: number) {
       if (game.crafting) reject('Finish the active craft before buying equipment.')
       const path = storePaths.find(candidate => candidate.items.includes(action.gearId))
       if (!path) reject('That equipment is not sold here.')
-      const index = path.items.findIndex(id => !game.ownedGear.includes(id))
+      const index = path.items.findIndex(id => !game.unlockedGear.includes(id))
       if (index < 0 || path.items[index] !== action.gearId) reject('That is not the next equipment tier.')
       const price = path.prices[index]!
       if (game.gold < price) reject('Not enough gold.')
       spendGold(game, price)
       game.ownedGear.push(action.gearId)
+      if (!game.unlockedGear.includes(action.gearId)) game.unlockedGear.push(action.gearId)
       equip(game, action.gearId, now)
       game.message = `${gearCatalog[action.gearId]!.name} purchased and equipped. ${path.name} stock advanced.`
       checkAchievements(game)
@@ -780,6 +787,17 @@ function performAction(game: Game, action: Action, now: number) {
       game.inventory[action.item] -= action.quantity
       giveGold(game, payout)
       game.message = `Sold ${action.quantity} × ${action.item} for ${payout} gold.`
+      break
+    }
+    case 'sellGear': {
+      if (typeof action.gearId !== 'string' || !game.ownedGear.includes(action.gearId)) reject('That equipment is not owned.')
+      if (Object.values(game.equipment).includes(action.gearId)) reject('Unequip that item before selling it.')
+      const gear = gearCatalog[action.gearId]
+      if (!gear) reject('Unknown equipment.')
+      const payout = Math.max(5, gear.tier * 30)
+      game.ownedGear = game.ownedGear.filter(id => id !== action.gearId)
+      giveGold(game, payout)
+      game.message = `${gear.name} sold for ${payout} gold. Its tier remains unlocked.`
       break
     }
     default:
@@ -840,7 +858,8 @@ function publicState(game: Game, now = Date.now()) {
     sellPrices: Object.fromEntries(Object.keys(game.inventory).map(item => [item, itemSellPrice(item)])),
     workers: game.workers, workerPrice: workerPrice(game), workerAssignments: game.workerAssignments, workerProgress: game.workerProgress,
     assignedWorkers, freeWorkers: game.workers - assignedWorkers,
-    equipment: game.equipment, ownedGear: game.ownedGear, shopUpgrades: game.shopUpgrades,
+    equipment: game.equipment, ownedGear: game.ownedGear, unlockedGear: game.unlockedGear, shopUpgrades: game.shopUpgrades,
+    gearSellPrices: Object.fromEntries(game.ownedGear.map(id => [id, Math.max(5, (gearCatalog[id]?.tier || 0) * 30)])),
     shopUpgradeCosts: Object.fromEntries(shopUpgradeDetails.map(upgrade => [upgrade.id, shopUpgradeCost(game, upgrade)])),
     crafting, nextGearIds: nextGearIds(game),
     achievements: achievementDefinitions.map(achievement => ({ ...achievement, progress: achievementProgress(game, achievement), unlocked: game.unlockedAchievements.has(achievement.id) })),

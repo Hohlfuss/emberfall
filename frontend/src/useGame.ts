@@ -35,7 +35,7 @@ type ServerState = {
   inventory: Record<string, number>
   sellPrices: Record<string, number>
   workers: number; workerPrice: number; workerAssignments: Record<string, number>; workerProgress: Record<string, number>; assignedWorkers: number; freeWorkers: number
-  equipment: Record<GearSlot, string | undefined>; ownedGear: string[]
+  equipment: Record<GearSlot, string | undefined>; ownedGear: string[]; unlockedGear: string[]; gearSellPrices: Record<string, number>
   shopUpgrades: Record<ShopUpgradeId, number>; shopUpgradeCosts: Record<ShopUpgradeId, number>
   crafting: { id: string; progress: number } | null
   nextGearIds: string[]; achievements: Achievement[]; events: GameEvent[]
@@ -152,6 +152,7 @@ export function useGame() {
   const freeWorkers = computed(() => state.value?.freeWorkers || 0)
   const equipment = computed(() => state.value?.equipment || emptyEquipment)
   const ownedGear = computed(() => state.value?.ownedGear || [])
+  const gearSellPrices = computed(() => state.value?.gearSellPrices || {})
   const shopUpgrades = computed(() => state.value?.shopUpgrades || { medic: 0, scouting: 0, training: 0, fortitude: 0, autoBattle: 0 })
   const achievements = computed(() => state.value?.achievements || [])
   const craftingProfession = computed(() => state.value?.craftingProfession || { level: 1, xp: 0, xpNeeded: 35 })
@@ -455,6 +456,7 @@ export function useGame() {
   function equipGear(id: string) { void sendAction({ type: 'equipGear', gearId: id }) }
   function toggleAutoBattle(enabled: boolean) { void sendAction({ type: 'toggleAutoBattle', enabled }) }
   function sellItem(item: string, quantity: number) { void sendAction({ type: 'sellItem', item, quantity }) }
+  function sellGear(gearId: string) { void sendAction({ type: 'sellGear', gearId }) }
 
   onMounted(() => {
     void connectBackend()
@@ -471,12 +473,12 @@ export function useGame() {
     enemyTier, highestEnemyTier, enemy, battleStarted, autoBattle, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
     heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
     woods, rocks, allResources, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, sellPrices, resourceMastery,
-    workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, shopUpgrades, achievements, craftingId, craftingProfession, craftingStats,
+    workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId, craftingProfession, craftingStats,
     craftFilter, filteredRecipes, storeListings, materialGroups, toasts,
     leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
     chatMessages, chatOnline, chatError,
     auctionListings, auctionError,
     professionStats, professionXpNeeded, isUnlocked, effectiveDuration, canCraft, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip, recipeTooltip,
-    submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, dismissToast, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
+    submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, dismissToast, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
   }
 }

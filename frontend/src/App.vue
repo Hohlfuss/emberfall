@@ -14,14 +14,14 @@ const {
   enemyTier, highestEnemyTier, enemy, battleStarted, autoBattle, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
   heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
   woods, rocks, allResources, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, sellPrices, resourceMastery,
-  workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, shopUpgrades, achievements, craftingId,
+  workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId,
   craftingProfession, craftingStats,
   craftFilter, filteredRecipes, storeListings, materialGroups, toasts,
   leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
   chatMessages, chatOnline, chatError,
   auctionListings, auctionError,
   professionStats, professionXpNeeded, isUnlocked, effectiveDuration, canCraft, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip, recipeTooltip,
-  submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, dismissToast, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
+  submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, dismissToast, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
 } = useGame()
 
 function refreshHoverTitles() {
@@ -92,7 +92,7 @@ onUpdated(refreshHoverTitles)
     <CraftingInventoryStats :profession="craftingProfession" :stats="craftingStats" />
   </Teleport>
   <Teleport v-if="playerName && page === 'shop'" defer to=".shop-grid">
-    <SalvageBuyer :inventory="inventory" :prices="sellPrices" @sell="sellItem" />
+    <SalvageBuyer :inventory="inventory" :prices="sellPrices" :gear="ownedGear.map(id => ({ id, name: gearCatalog[id].name, icon: gearCatalog[id].icon, equipped: equipment[gearCatalog[id].slot] === id, price: gearSellPrices[id] || 5 }))" @sell="sellItem" @sell-gear="sellGear" />
   </Teleport>
   <AuctionHouse v-if="playerName && page === 'auction'" :listings="auctionListings" :inventory="inventory" :gold="gold" :player-name="playerName" :error="auctionError" @refresh="loadAuction" @create="createAuction" @buy="buyAuction" @cancel="cancelAuction" />
   <ChatPanel v-if="playerName" :messages="chatMessages" :online="chatOnline" :error="chatError" @send="sendChat" />
