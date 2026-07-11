@@ -7,6 +7,8 @@ type GameEvent = { id: number; kind: 'achievement' | 'critical'; title: string; 
 type Achievement = { id: string; name: string; description: string; goal: number; reward: number; icon: string; progress: number; unlocked: boolean }
 type StorePath = { id: string; name: string; icon: string; items: string[]; prices: number[] }
 type ShopUpgradeDetail = { id: ShopUpgradeId; name: string; description: string; icon: string; baseCost: number; max: number }
+type FactionId = 'wardens' | 'delvers' | 'vanguard'
+export type FactionDefinition = { id: FactionId; name: string; icon: string; unlockLevel: number; description: string; ranks: readonly number[]; rewards: readonly string[] }
 type GameConfig = {
   woods: Resource[]
   rocks: Resource[]
@@ -16,6 +18,7 @@ type GameConfig = {
   slotLabels: Record<GearSlot, string>
   storePaths: StorePath[]
   shopUpgradeDetails: ShopUpgradeDetail[]
+  factionDefinitions: FactionDefinition[]
 }
 type ServerState = {
   id: string; revision: number; serverNow: number; playerName: string; gold: number; level: number; xp: number; xpNeeded: number; message: string
@@ -39,6 +42,7 @@ type ServerState = {
   shopUpgrades: Record<ShopUpgradeId, number>; shopUpgradeCosts: Record<ShopUpgradeId, number>
   crafting: { id: string; progress: number } | null
   nextGearIds: string[]; achievements: Achievement[]; events: GameEvent[]
+  alliedFaction: FactionId | null; factions: Record<FactionId, { reputation: number; rank: number }>
 }
 type Toast = { id: number; kind: GameEvent['kind']; title: string; detail: string }
 type LeaderboardCategory = 'level' | 'gold' | 'woodcutting' | 'mining' | 'clicks' | 'kills' | 'gathered' | 'crafted'
@@ -60,7 +64,7 @@ function apiUrl(path: string): string {
 }
 
 export function useGame() {
-  const tabs: Page[] = ['battle', 'woodcutting', 'mining', 'crafting', 'workers', 'inventory', 'achievements', 'auction', 'high scores', 'shop']
+  const tabs: Page[] = ['battle', 'woodcutting', 'mining', 'crafting', 'workers', 'inventory', 'achievements', 'factions', 'auction', 'high scores', 'shop']
   const page = ref<Page>('battle')
   const authMode = ref<'login' | 'register'>('login')
   const authUsername = ref('')
@@ -155,6 +159,9 @@ export function useGame() {
   const gearSellPrices = computed(() => state.value?.gearSellPrices || {})
   const shopUpgrades = computed(() => state.value?.shopUpgrades || { medic: 0, scouting: 0, training: 0, fortitude: 0, autoBattle: 0 })
   const achievements = computed(() => state.value?.achievements || [])
+  const factionDefinitions = computed(() => config.value?.factionDefinitions || [])
+  const alliedFaction = computed(() => state.value?.alliedFaction || null)
+  const factions = computed(() => state.value?.factions || { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } })
   const craftingProfession = computed(() => state.value?.craftingProfession || { level: 1, xp: 0, xpNeeded: 35 })
   const craftingStats = computed(() => state.value?.craftingStats || { speed: 0, conservationChance: 0, bonusOutputChance: 0, totalCrafts: 0, materialsSaved: 0, bonusOutputs: 0 })
   const craftingId = computed(() => state.value?.crafting?.id || '')
@@ -457,6 +464,7 @@ export function useGame() {
   function toggleAutoBattle(enabled: boolean) { void sendAction({ type: 'toggleAutoBattle', enabled }) }
   function sellItem(item: string, quantity: number) { void sendAction({ type: 'sellItem', item, quantity }) }
   function sellGear(gearId: string) { void sendAction({ type: 'sellGear', gearId }) }
+  function allyFaction(factionId: FactionId) { void sendAction({ type: 'allyFaction', factionId }) }
 
   onMounted(() => {
     void connectBackend()
@@ -473,12 +481,12 @@ export function useGame() {
     enemyTier, highestEnemyTier, enemy, battleStarted, autoBattle, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
     heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
     woods, rocks, allResources, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, sellPrices, resourceMastery,
-    workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId, craftingProfession, craftingStats,
+    workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId, craftingProfession, craftingStats, factionDefinitions, alliedFaction, factions,
     craftFilter, filteredRecipes, storeListings, materialGroups, toasts,
     leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
     chatMessages, chatOnline, chatError,
     auctionListings, auctionError,
     professionStats, professionXpNeeded, isUnlocked, effectiveDuration, canCraft, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip, recipeTooltip,
-    submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, dismissToast, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
+    submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, dismissToast, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
   }
 }

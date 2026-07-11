@@ -1,4 +1,4 @@
-export type Page = 'battle' | 'woodcutting' | 'mining' | 'crafting' | 'workers' | 'inventory' | 'achievements' | 'auction' | 'high scores' | 'shop'
+export type Page = 'battle' | 'woodcutting' | 'mining' | 'crafting' | 'workers' | 'inventory' | 'achievements' | 'factions' | 'auction' | 'high scores' | 'shop'
 export type Skill = 'woodcutting' | 'mining'
 export type GearSlot = 'weapon' | 'helmet' | 'chest' | 'legs' | 'boots' | 'gloves' | 'ring' | 'amulet' | 'pickaxe' | 'hatchet'
 
@@ -115,6 +115,9 @@ export const gearCatalog: Record<string, Gear> = {
   goldGreaves: { id: 'goldGreaves', name: 'Sunforged Greaves', slot: 'legs', tier: 8, icon: '🦿', description: 'Enchanted gold moves without weight.', bonuses: { defense: 9, maxHealth: 30, encounterSpeed: 250 } },
   forgeGloves: { id: 'forgeGloves', name: 'Runebound Forge Gloves', slot: 'gloves', tier: 5, icon: '🧤', description: 'Layered bindings improve every practiced strike.', bonuses: { woodYield: 2, miningYield: 2, woodCrit: 5, miningCrit: 5, critPower: .25 } },
   masterBoots: { id: 'masterBoots', name: 'Obsidian Pathfinder Boots', slot: 'boots', tier: 7, icon: '🥾', description: 'Masterwork boots built for dangerous ground.', bonuses: { attackSpeed: 180, woodSpeed: 10, miningSpeed: 10, defense: 4 } },
+  voidfang: { id: 'voidfang', name: 'Voidfang', slot: 'weapon', tier: 12, icon: '🗡️', description: 'A nearly impossible trophy torn from the void.', bonuses: { attack: 35, attackSpeed: 260, critPower: .5 } },
+  heartOfTheGrove: { id: 'heartOfTheGrove', name: 'Heart of the Grove', slot: 'amulet', tier: 12, icon: '💚', description: 'A living relic that hums with ancient growth.', bonuses: { maxHealth: 75, woodYield: 2, woodSpeed: 20, fortune: 8 } },
+  starforgedSignet: { id: 'starforgedSignet', name: 'Starforged Signet', slot: 'ring', tier: 12, icon: '🌠', description: 'A fallen star captured in an unbreakable band.', bonuses: { miningYield: 2, miningSpeed: 20, miningCrit: 10, fortune: 8 } },
 }
 
 export const recipes: Recipe[] = [

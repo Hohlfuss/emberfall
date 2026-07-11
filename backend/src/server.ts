@@ -65,6 +65,8 @@ type AchievementDefinition = { id: string; name: string; description: string; ki
 type GatherJob = { resourceId: string; startedAt: number; endsAt: number; critical: boolean; duration: number }
 type CraftJob = { recipeId: string; startedAt: number; endsAt: number; duration: number }
 type TimedState = { startedAt: number; endsAt: number }
+type FactionId = 'wardens' | 'delvers' | 'vanguard'
+type FactionProgress = { reputation: number; rank: number }
 
 type Game = {
   id: string
@@ -102,6 +104,8 @@ type Game = {
   events: GameEvent[]
   nextEventId: number
   lifetime: LifetimeStats
+  alliedFaction: FactionId | null
+  factions: Record<FactionId, FactionProgress>
 }
 
 type LifetimeStats = {
@@ -136,6 +140,13 @@ type Action =
   | { type: 'toggleAutoBattle'; enabled: boolean }
   | { type: 'sellItem'; item: string; quantity: number }
   | { type: 'sellGear'; gearId: string }
+  | { type: 'allyFaction'; factionId: FactionId }
+
+const factionDefinitions = [
+  { id: 'wardens', name: 'Verdant Wardens', icon: '🌿', unlockLevel: 3, description: 'Protectors of ancient forests. Reputation comes from woodcutting.', ranks: [50, 175, 450, 900], rewards: ['+5% woodcutting speed', '+1 woodcutting yield', '+5 Fortune', '+15% woodcutting speed'] },
+  { id: 'delvers', name: 'Deep Delvers', icon: '💎', unlockLevel: 5, description: 'Seekers of secrets beneath the mountains. Reputation comes from mining.', ranks: [50, 175, 450, 900], rewards: ['+5% mining speed', '+1 mining yield', '+5 Fortune', '+15% mining speed'] },
+  { id: 'vanguard', name: 'Ember Vanguard', icon: '🔥', unlockLevel: 7, description: 'Monster hunters defending Emberfall. Reputation comes from victories.', ranks: [50, 175, 450, 900], rewards: ['+3 Attack', '+3 Defense', '+20 maximum health', '+8 Attack'] },
+] as const
 
 const storePaths = [
   { id: 'hatchets', name: 'Hatchets', icon: '🪓', items: ['pineHatchet', 'oakHatchet', 'mapleHatchet', 'yewHatchet'], prices: [175, 1800, 6500, 16000] },
@@ -232,6 +243,8 @@ function deserializeGame(value: unknown): Game {
     craftingProfession: stored.craftingProfession ?? { level: 1, xp: 0 },
     autoBattle: stored.autoBattle ?? false,
     unlockedGear: stored.unlockedGear ?? [...(stored.ownedGear ?? [])],
+    alliedFaction: stored.alliedFaction ?? null,
+    factions: stored.factions ?? { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } },
     shopUpgrades: {
       medic: stored.shopUpgrades?.medic ?? 0,
       scouting: stored.shopUpgrades?.scouting ?? 0,
@@ -330,7 +343,25 @@ function totalBonuses(game: Game): Bonuses {
     if (!gear) return
     Object.entries(gear.bonuses).forEach(([stat, value]) => result[stat] = (result[stat] || 0) + value)
   })
+  const faction = game.alliedFaction
+  const rank = faction ? game.factions[faction].rank : 0
+  if (faction === 'wardens') { result.woodSpeed = (result.woodSpeed || 0) + (rank >= 1 ? 5 : 0) + (rank >= 4 ? 15 : 0); result.woodYield = (result.woodYield || 0) + (rank >= 2 ? 1 : 0); result.fortune = (result.fortune || 0) + (rank >= 3 ? 5 : 0) }
+  if (faction === 'delvers') { result.miningSpeed = (result.miningSpeed || 0) + (rank >= 1 ? 5 : 0) + (rank >= 4 ? 15 : 0); result.miningYield = (result.miningYield || 0) + (rank >= 2 ? 1 : 0); result.fortune = (result.fortune || 0) + (rank >= 3 ? 5 : 0) }
+  if (faction === 'vanguard') { result.attack = (result.attack || 0) + (rank >= 1 ? 3 : 0) + (rank >= 4 ? 8 : 0); result.defense = (result.defense || 0) + (rank >= 2 ? 3 : 0); result.maxHealth = (result.maxHealth || 0) + (rank >= 3 ? 20 : 0) }
   return result
+}
+
+function gainFactionReputation(game: Game, factionId: FactionId, amount: number) {
+  if (game.alliedFaction !== factionId) return
+  const progress = game.factions[factionId]
+  progress.reputation += amount
+  const definition = factionDefinitions.find(faction => faction.id === factionId)!
+  while (progress.rank < definition.ranks.length && progress.reputation >= definition.ranks[progress.rank]!) {
+    progress.rank++
+    giveGold(game, progress.rank * 100)
+    if (progress.rank === 4) game.workers++
+    pushEvent(game, 'achievement', `${definition.name} Rank ${progress.rank}`, `${definition.rewards[progress.rank - 1]} · +${progress.rank * 100} gold${progress.rank === 4 ? ' · +1 worker' : ''}`)
+  }
 }
 
 function combatStats(game: Game) {
@@ -481,6 +512,7 @@ function completeGather(game: Game, skill: Skill) {
   const fortunate = Math.random() * 100 < stats.fortune
   if (fortunate) amount *= 2
   giveResource(game, resource, amount, true)
+  gainFactionReputation(game, resource.skill === 'woodcutting' ? 'wardens' : 'delvers', Math.max(1, resource.tier))
   const effects = [job.critical && 'critical', precise && 'precision', fortunate && 'fortune'].filter(Boolean).join(' + ')
   game.message = `Gathered ${amount} × ${resource.item}${effects ? ` (${effects})` : ''}.`
 }
@@ -519,6 +551,19 @@ function finishVictory(game: Game, now: number) {
   const rewardGold = game.enemy.gold
   giveGold(game, rewardGold)
   game.lifetime.kills++
+  gainFactionReputation(game, 'vanguard', Math.max(1, game.enemyTier * 2))
+  const rareDrops = ['voidfang', 'heartOfTheGrove', 'starforgedSignet']
+  if (game.enemyTier >= 5 && Math.random() < .00015 + game.enemyTier * .00005) {
+    const gearId = rareDrops[Math.floor(Math.random() * rareDrops.length)]!
+    if (!game.ownedGear.includes(gearId)) {
+      game.ownedGear.push(gearId)
+      if (!game.unlockedGear.includes(gearId)) game.unlockedGear.push(gearId)
+      const gear = gearCatalog[gearId]!
+      pushEvent(game, 'achievement', 'Mythic drop!', `${gear.icon} ${gear.name} dropped from ${game.enemy.name}`)
+      chatMessages.push({ id: randomUUID(), username: 'realm', name: 'Realm Herald', message: `${game.name} found the mythic ${gear.name} from a tier ${game.enemyTier} ${game.enemy.name}!`, createdAt: new Date().toISOString() })
+      if (chatMessages.length > CHAT_LIMIT) chatMessages.splice(0, chatMessages.length - CHAT_LIMIT)
+    }
+  }
   if (game.enemyTier === game.highestEnemyTier && game.highestEnemyTier < 25) game.highestEnemyTier++
   stopBattle(game)
   gainXp(game, rewardXp)
@@ -643,7 +688,7 @@ function createGame(name: string): Game {
     equipment: { weapon: 'rustySword', helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: 'crackedPickaxe', hatchet: 'wornHatchet' },
     professions: { woodcutting: { level: 1, xp: 0 }, mining: { level: 1, xp: 0 } }, craftingProfession: { level: 1, xp: 0 }, resourceMastery: {}, jobs: {},
     workerAssignments: {}, workerProgress: {}, workers: 0, shopUpgrades: { medic: 0, scouting: 0, training: 0, fortitude: 0, autoBattle: 0 },
-    unlockedAchievements: new Set(),
+    unlockedAchievements: new Set(), alliedFaction: null, factions: { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } },
     lifetime: createLifetimeStats(),
     enemyTier: 1, highestEnemyTier: 1, enemy: { name: 'Loading...', archetype: '', health: 0, maxHealth: 1, attack: 0, defense: 0, attackSpeed: 0, xp: 0, gold: 0 },
     battleActive: false, autoBattle: false, nextPlayerAttackAt: 0, nextEnemyAttackAt: 0, recovery: null, enemyLoad: null, crafting: null,
@@ -800,6 +845,13 @@ function performAction(game: Game, action: Action, now: number) {
       game.message = `${gear.name} sold for ${payout} gold. Its tier remains unlocked.`
       break
     }
+    case 'allyFaction': {
+      const definition = factionDefinitions.find(faction => faction.id === action.factionId)
+      if (!definition || game.level < definition.unlockLevel) reject('That faction is not unlocked yet.')
+      game.alliedFaction = action.factionId
+      game.message = `You are now allied with ${definition.name}.`
+      break
+    }
     default:
       reject('Unknown action.')
   }
@@ -860,6 +912,7 @@ function publicState(game: Game, now = Date.now()) {
     assignedWorkers, freeWorkers: game.workers - assignedWorkers,
     equipment: game.equipment, ownedGear: game.ownedGear, unlockedGear: game.unlockedGear, shopUpgrades: game.shopUpgrades,
     gearSellPrices: Object.fromEntries(game.ownedGear.map(id => [id, Math.max(5, (gearCatalog[id]?.tier || 0) * 30)])),
+    alliedFaction: game.alliedFaction, factions: game.factions,
     shopUpgradeCosts: Object.fromEntries(shopUpgradeDetails.map(upgrade => [upgrade.id, shopUpgradeCost(game, upgrade)])),
     crafting, nextGearIds: nextGearIds(game),
     achievements: achievementDefinitions.map(achievement => ({ ...achievement, progress: achievementProgress(game, achievement), unlocked: game.unlockedAchievements.has(achievement.id) })),
@@ -867,7 +920,7 @@ function publicState(game: Game, now = Date.now()) {
   }
 }
 
-const config = { woods, rocks, allResources, gearCatalog, recipes: recipeData, slotLabels, storePaths, shopUpgradeDetails }
+const config = { woods, rocks, allResources, gearCatalog, recipes: recipeData, slotLabels, storePaths, shopUpgradeDetails, factionDefinitions }
 
 function passwordHash(password: string, salt: string) {
   return scryptSync(password, salt, 64).toString('hex')
