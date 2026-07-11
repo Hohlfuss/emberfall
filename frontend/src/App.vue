@@ -31,7 +31,7 @@ const {
 function refreshHoverTitles() {
   void nextTick(() => {
     const workerRewardText = document.querySelector<HTMLElement>('.worker-shop p')
-    if (workerRewardText) workerRewardText.textContent = 'Assign workers to unlocked materials. Every 10 player levels awards one free worker.'
+    if (workerRewardText) workerRewardText.textContent = 'Assign workers to unlocked materials. Level 2 awards your first free worker, then every 10 levels awards another.'
     document.querySelectorAll<HTMLElement>('.resource-card').forEach((card, index) => {
       const resources = page.value === 'woodcutting' ? woods.value : rocks.value
       if (resources[index]) card.title = resourceTooltip(resources[index])

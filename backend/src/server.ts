@@ -63,7 +63,7 @@ type GameEvent = { id: number; kind: EventKind; title: string; detail: string }
 type AchievementKind = 'level' | 'kills' | 'deaths' | 'tier' | 'gathered' | 'crafted' | 'workers' | 'woodLevel' | 'mineLevel' | 'gear' | 'actions' | 'goldEarned' | 'goldSpent'
 type AchievementDefinition = { id: string; name: string; description: string; kind: AchievementKind; goal: number; reward: number; icon: string }
 type GatherJob = { resourceId: string; startedAt: number; endsAt: number; critical: boolean; duration: number }
-type CraftJob = { recipeId: string; startedAt: number; endsAt: number; duration: number }
+type CraftJob = { recipeId: string; startedAt: number; endsAt: number; duration: number; receipt?: string }
 type TimedState = { startedAt: number; endsAt: number }
 type FactionId = 'wardens' | 'delvers' | 'vanguard'
 type FactionProgress = { reputation: number; rank: number }
@@ -275,6 +275,7 @@ function deserializeGame(value: unknown): Game {
     alliedFaction: stored.alliedFaction ?? null,
     factions: stored.factions ?? { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } },
     daily: stored.daily ?? createDailyState(stored.lifetime ?? createLifetimeStats()),
+    workers: stored.level >= 2 && stored.workers === 0 ? 1 : stored.workers,
     shopUpgrades: {
       medic: stored.shopUpgrades?.medic ?? 0,
       scouting: stored.shopUpgrades?.scouting ?? 0,
@@ -498,7 +499,7 @@ function gainXp(game: Game, amount: number) {
     game.player.baseAttack += 1
     if (game.level % 2 === 0) game.player.baseDefense += 1
     game.player.health = combatStats(game).maxHealth
-    if (game.level % 10 === 0) {
+    if (game.level === 2 || game.level % 10 === 0) {
       game.workers++
       game.message = `Level ${game.level}! A gatherer joined you as a level reward.`
     } else game.message = `Level up! ${game.name} reached level ${game.level}.`
@@ -580,7 +581,7 @@ function completeCraft(game: Game) {
     game.message = `Crafting reached level ${game.craftingProfession.level}! New recipes are now available.`
   }
   game.lifetime.crafted++
-  game.message = `${recipe.name} completed and added to your inventory.`
+  game.message = `${recipe.name} completed and added to your inventory.${craft.receipt ? ` Materials: ${craft.receipt}.` : ''}`
   checkAchievements(game)
 }
 
@@ -829,7 +830,7 @@ function performAction(game: Game, action: Action, now: number) {
         game.inventory[item] = before - spent
         if (!Number.isFinite(game.inventory[item]) || game.inventory[item] < 0) reject(`Invalid inventory state for ${item}.`)
         game.lifetime.craftingMaterialsSaved += saved
-        receipt.push(`${spent} ${item}${saved ? ' (1 conserved)' : ''}`)
+        receipt.push(`${item}: ${before}→${game.inventory[item]}${saved ? ' (1 conserved)' : ''}`)
       })
       const invalidDeduction = Object.entries(recipe.costs).find(([item, cost]) => {
         const expected = inventoryBefore[item]! - Number(cost)
@@ -840,7 +841,7 @@ function performAction(game: Game, action: Action, now: number) {
         reject(`Could not deduct the required ${invalidDeduction[0]}. No materials were consumed.`)
       }
       const duration = recipe.duration * (1 - craftStats.speed / 100)
-      game.crafting = { recipeId: recipe.id, startedAt: now, endsAt: now + duration * 1000, duration }
+      game.crafting = { recipeId: recipe.id, startedAt: now, endsAt: now + duration * 1000, duration, receipt: receipt.join(' · ') }
       game.message = `Crafting ${recipe.name}... Used ${receipt.join(' · ')}.`
       break
     }

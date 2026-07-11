@@ -121,7 +121,7 @@ export const gearCatalog: Record<string, Gear> = {
 }
 
 export const recipes: Recipe[] = [
-  { id: 'plank', name: 'Pine Planks', category: 'components', description: 'Prepare timber for advanced recipes.', duration: 12, costs: { 'Pine Log': 3 }, outputItem: 'Pine Plank', outputQty: 2, progress: 0 },
+  { id: 'plank', name: 'Pine Plank', category: 'components', description: 'Prepare one sturdy plank for advanced recipes.', duration: 12, costs: { 'Pine Log': 3 }, outputItem: 'Pine Plank', outputQty: 1, progress: 0 },
   { id: 'copperIngot', name: 'Copper Ingot', category: 'components', description: 'Smelt raw copper into a workable bar.', duration: 18, costs: { 'Copper Ore': 3, Stone: 1 }, outputItem: 'Copper Ingot', outputQty: 1, progress: 0 },
   { id: 'ironIngot', name: 'Iron Ingot', category: 'components', description: 'Strong metal used throughout the forge.', duration: 28, costs: { 'Iron Ore': 3, Limestone: 1 }, outputItem: 'Iron Ingot', outputQty: 1, progress: 0 },
   { id: 'silverIngot', name: 'Silver Ingot', category: 'components', description: 'Refined metal for enchanted accessories.', duration: 45, costs: { 'Silver Ore': 4, Granite: 1 }, outputItem: 'Silver Ingot', outputQty: 1, progress: 0 },
@@ -142,8 +142,8 @@ export const recipes: Recipe[] = [
   { id: 'loggerGlovesRecipe', name: 'Artisan Gloves', category: 'accessories', description: 'Improves yield and critical chance for both skills.', duration: 48, costs: { 'Maple Log': 8, 'Iron Ingot': 2 }, outputGear: 'loggerGloves', progress: 0 },
   { id: 'silverRingRecipe', name: 'Ring of Fortune', category: 'accessories', description: 'Raises the chance to double a gathering yield.', duration: 85, costs: { 'Silver Ingot': 5, 'Gold Ore': 2 }, outputGear: 'silverRing', progress: 0 },
   { id: 'moonAmuletRecipe', name: 'Moonstone Amulet', category: 'accessories', description: 'Greatly empowers critical gathering actions.', duration: 150, costs: { Moonstone: 6, 'Spirit Log': 5, 'Gold Ore': 5 }, outputGear: 'moonAmulet', progress: 0 },
-  { id: 'birchPlank', name: 'Birch Planks', category: 'components', description: 'Flexible boards for light equipment.', duration: 16, costs: { 'Birch Log': 3 }, outputItem: 'Birch Plank', outputQty: 2, progress: 0 },
-  { id: 'oakPlank', name: 'Oak Planks', category: 'components', description: 'Dense boards for armor and tool hafts.', duration: 25, costs: { 'Oak Log': 3 }, outputItem: 'Oak Plank', outputQty: 2, progress: 0 },
+  { id: 'birchPlank', name: 'Birch Plank', category: 'components', description: 'Prepare one flexible board for light equipment.', duration: 16, costs: { 'Birch Log': 3 }, outputItem: 'Birch Plank', outputQty: 1, progress: 0 },
+  { id: 'oakPlank', name: 'Oak Plank', category: 'components', description: 'Prepare one dense board for armor and tool hafts.', duration: 25, costs: { 'Oak Log': 3 }, outputItem: 'Oak Plank', outputQty: 1, progress: 0 },
   { id: 'stoneBlock', name: 'Cut Stone Block', category: 'components', description: 'A precisely shaped building component.', duration: 16, costs: { Stone: 4 }, outputItem: 'Stone Block', outputQty: 1, progress: 0 },
   { id: 'graniteBlock', name: 'Polished Granite', category: 'components', description: 'A durable component for advanced gear.', duration: 48, costs: { Granite: 4 }, outputItem: 'Granite Block', outputQty: 1, progress: 0 },
   { id: 'goldIngot', name: 'Gold Ingot', category: 'components', description: 'Refined gold that holds enchantments well.', duration: 65, costs: { 'Gold Ore': 4, Obsidian: 1 }, outputItem: 'Gold Ingot', outputQty: 1, progress: 0 },
