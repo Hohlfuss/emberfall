@@ -37,6 +37,13 @@ type ServerState = {
   nextGearIds: string[]; achievements: Achievement[]; events: GameEvent[]
 }
 type Toast = { id: number; kind: GameEvent['kind']; title: string; detail: string }
+type LeaderboardCategory = 'level' | 'gold' | 'woodcutting' | 'mining' | 'clicks' | 'kills' | 'gathered' | 'crafted'
+type LeaderboardEntry = {
+  rank: number
+  username: string
+  name: string
+  score: number
+}
 
 const API_URL = (
   import.meta.env.VITE_API_URL || 'http://localhost:3000'
@@ -64,6 +71,11 @@ export function useGame() {
   const config = ref<GameConfig | null>(null)
   const craftFilter = ref<'all' | Recipe['category']>('all')
   const toasts = ref<Toast[]>([])
+  const leaderboardCategory = ref<LeaderboardCategory>('woodcutting')
+  const leaderboardLabel = ref('Woodcutting Level')
+  const leaderboardRows = ref<LeaderboardEntry[]>([])
+  const leaderboardLoading = ref(false)
+  const leaderboardError = ref('')
   const seenEventIds = new Set<number>()
   const toastTimers = new Map<number, ReturnType<typeof setTimeout>>()
   let nextToastId = 1
@@ -201,31 +213,59 @@ export function useGame() {
     if (!response.ok) throw new Error(payload.error || 'The server rejected the request.')
     return payload
   }
-  async function loadConfig() {
-  config.value = await readJson<GameConfig>(
-    await fetch(apiUrl('/api/config'))
-  )
-}
 
-async function connectBackend() {
-  try {
-    const response = await fetch(apiUrl('/api/health'))
+  async function loadLeaderboard(
+    category: LeaderboardCategory = leaderboardCategory.value,
+  ): Promise<void> {
+    leaderboardCategory.value = category
+    leaderboardLoading.value = true
+    leaderboardError.value = ''
 
-    if (!response.ok) {
-      throw new Error()
+    try {
+      const result = await readJson<{
+        category: LeaderboardCategory
+        label: string
+        rows: LeaderboardEntry[]
+      }>(await fetch(apiUrl(`/api/leaderboards/${category}`)))
+
+      leaderboardCategory.value = result.category
+      leaderboardLabel.value = result.label
+      leaderboardRows.value = result.rows
+    } catch (error) {
+      leaderboardRows.value = []
+      leaderboardError.value = error instanceof Error
+        ? error.message
+        : 'Could not load leaderboard.'
+    } finally {
+      leaderboardLoading.value = false
     }
-
-    serverOnline.value = true
-    backendError.value = ''
-
-    if (!config.value) {
-      await loadConfig()
-    }
-  } catch {
-    serverOnline.value = false
-    backendError.value = 'Backend offline. Start the server to play.'
   }
-}
+
+  async function loadConfig() {
+    config.value = await readJson<GameConfig>(
+      await fetch(apiUrl('/api/config')),
+    )
+  }
+
+  async function connectBackend() {
+    try {
+      const response = await fetch(apiUrl('/api/health'))
+
+      if (!response.ok) {
+        throw new Error()
+      }
+
+      serverOnline.value = true
+      backendError.value = ''
+
+      if (!config.value) {
+        await loadConfig()
+      }
+    } catch {
+      serverOnline.value = false
+      backendError.value = 'Backend offline. Start the server to play.'
+    }
+  }
 
   function switchAuthMode(mode: 'login' | 'register') {
     authMode.value = mode
@@ -297,6 +337,7 @@ async function connectBackend() {
 
   onMounted(() => {
     void connectBackend()
+    void loadLeaderboard()
     healthTimer = setInterval(() => { if (!serverOnline.value) void connectBackend() }, 2000)
   })
   onBeforeUnmount(() => {
@@ -311,7 +352,8 @@ async function connectBackend() {
     woods, rocks, allResources, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, resourceMastery,
     workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, shopUpgrades, achievements, craftingId,
     craftFilter, filteredRecipes, storeListings, materialGroups, toasts,
+    leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
     professionStats, professionXpNeeded, isUnlocked, effectiveDuration, canCraft, shopUpgradeCost, achievementProgress, formatBonus,
-    submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, dismissToast,
+    submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, dismissToast, loadLeaderboard,
   }
 }

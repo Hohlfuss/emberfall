@@ -6,6 +6,44 @@ import {
 } from '../../frontend/src/gameData.ts'
 import { supabase } from "../supabase.ts";
 
+const leaderboardCategories = {
+  level: {
+    column: 'player_level',
+    label: 'Player Level',
+  },
+  gold: {
+    column: 'gold',
+    label: 'Gold',
+  },
+  woodcutting: {
+    column: 'woodcutting_level',
+    label: 'Woodcutting Level',
+  },
+  mining: {
+    column: 'mining_level',
+    label: 'Mining Level',
+  },
+  clicks: {
+    column: 'total_clicks',
+    label: 'Total Clicks',
+  },
+  kills: {
+    column: 'monsters_killed',
+    label: 'Monsters Killed',
+  },
+  gathered: {
+    column: 'resources_gathered',
+    label: 'Resources Gathered',
+  },
+  crafted: {
+    column: 'items_crafted',
+    label: 'Items Crafted',
+  },
+} as const
+
+type LeaderboardCategory =
+  keyof typeof leaderboardCategories
+
 const app = express()
 const port = Number(process.env.PORT) || 3000
 app.use(express.json())
@@ -48,7 +86,6 @@ type Game = {
   workerProgress: Record<string, number>
   workers: number
   shopUpgrades: Record<ShopUpgrade, number>
-  lifetime: { kills: number; deaths: number; gathered: number; crafted: number }
   unlockedAchievements: Set<string>
   enemyTier: number
   highestEnemyTier: number
@@ -61,6 +98,23 @@ type Game = {
   crafting: CraftJob | null
   events: GameEvent[]
   nextEventId: number
+  lifetime: LifetimeStats
+}
+
+type LifetimeStats = {
+  kills: number
+  deaths: number
+  gathered: number
+  crafted: number
+  totalClicks: number
+  manualGathers: number
+  battlesStarted: number
+  retreats: number
+  workersBought: number
+  upgradesBought: number
+  gearBought: number
+  goldEarned: number
+  goldSpent: number
 }
 
 type Action =
@@ -147,7 +201,15 @@ function deserializeGame(value: unknown): Game {
 
   return {
     ...stored,
-    unlockedAchievements: new Set(stored.unlockedAchievements ?? []),
+
+    lifetime: {
+      ...createLifetimeStats(),
+      ...(stored.lifetime ?? {}),
+    },
+
+    unlockedAchievements: new Set(
+      stored.unlockedAchievements ?? [],
+    ),
   }
 }
 
@@ -155,7 +217,7 @@ async function saveGame(
   username: string,
   game: Game,
 ): Promise<void> {
-  const { error } = await supabase
+  const playerSave = await supabase
     .from('players')
     .update({
       game_state: serializeGame(game),
@@ -163,8 +225,45 @@ async function saveGame(
     })
     .eq('username', username)
 
-  if (error) {
-    throw new Error(`Could not save game: ${error.message}`)
+  if (playerSave.error) {
+    throw new Error(
+      `Could not save game: ${playerSave.error.message}`,
+    )
+  }
+
+  const leaderboardSave = await supabase
+    .from('leaderboard_stats')
+    .upsert(
+      {
+        username,
+        display_name: game.name,
+
+        player_level: game.level,
+        gold: game.gold,
+
+        woodcutting_level:
+          game.professions.woodcutting.level,
+
+        mining_level:
+          game.professions.mining.level,
+
+        total_clicks: game.lifetime.totalClicks,
+        monsters_killed: game.lifetime.kills,
+        deaths: game.lifetime.deaths,
+        resources_gathered: game.lifetime.gathered,
+        items_crafted: game.lifetime.crafted,
+
+        updated_at: new Date().toISOString(),
+      },
+      {
+        onConflict: 'username',
+      },
+    )
+
+  if (leaderboardSave.error) {
+    throw new Error(
+      `Could not update leaderboard: ${leaderboardSave.error.message}`,
+    )
   }
 }
 
@@ -233,7 +332,7 @@ function checkAchievements(game: Game) {
   achievementDefinitions.forEach(achievement => {
     if (!game.unlockedAchievements.has(achievement.id) && achievementProgress(game, achievement) >= achievement.goal) {
       game.unlockedAchievements.add(achievement.id)
-      game.gold += achievement.reward
+      giveGold(game, achievement.reward)
       game.message = `Achievement unlocked: ${achievement.name}! +${achievement.reward} gold.`
       pushEvent(game, 'achievement', achievement.name, `Achievement unlocked · +${achievement.reward} gold`)
     }
@@ -349,7 +448,7 @@ function completeCraft(game: Game) {
 function finishVictory(game: Game, now: number) {
   const rewardXp = game.enemy.xp
   const rewardGold = game.enemy.gold
-  game.gold += rewardGold
+  giveGold(game, rewardGold)
   game.lifetime.kills++
   if (game.enemyTier === game.highestEnemyTier && game.highestEnemyTier < 25) game.highestEnemyTier++
   stopBattle(game)
@@ -435,6 +534,24 @@ function advanceGame(game: Game, now = Date.now()) {
   game.revision++
 }
 
+function createLifetimeStats(): LifetimeStats {
+  return {
+    kills: 0,
+    deaths: 0,
+    gathered: 0,
+    crafted: 0,
+    totalClicks: 0,
+    manualGathers: 0,
+    battlesStarted: 0,
+    retreats: 0,
+    workersBought: 0,
+    upgradesBought: 0,
+    gearBought: 0,
+    goldEarned: 0,
+    goldSpent: 0,
+  }
+}
+
 function createGame(name: string): Game {
   const now = Date.now()
   const game: Game = {
@@ -445,7 +562,8 @@ function createGame(name: string): Game {
     equipment: { weapon: 'rustySword', helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: 'crackedPickaxe', hatchet: 'wornHatchet' },
     professions: { woodcutting: { level: 1, xp: 0 }, mining: { level: 1, xp: 0 } }, resourceMastery: {}, jobs: {},
     workerAssignments: {}, workerProgress: {}, workers: 0, shopUpgrades: { medic: 0, scouting: 0, training: 0, fortitude: 0 },
-    lifetime: { kills: 0, deaths: 0, gathered: 0, crafted: 0 }, unlockedAchievements: new Set(),
+    unlockedAchievements: new Set(),
+    lifetime: createLifetimeStats(),
     enemyTier: 1, highestEnemyTier: 1, enemy: { name: 'Loading...', archetype: '', health: 0, maxHealth: 1, attack: 0, defense: 0, attackSpeed: 0, xp: 0, gold: 0 },
     battleActive: false, nextPlayerAttackAt: 0, nextEnemyAttackAt: 0, recovery: null, enemyLoad: null, crafting: null,
     events: [], nextEventId: 1,
@@ -470,12 +588,14 @@ function performAction(game: Game, action: Action, now: number) {
       game.nextPlayerAttackAt = now + stats.attackSpeed
       game.nextEnemyAttackAt = now + game.enemy.attackSpeed
       game.message = `Battle started against tier ${game.enemyTier} ${game.enemy.name}.`
+      game.lifetime.battlesStarted++
       break
     }
     case 'retreat':
       if (!game.battleActive) reject('There is no battle to retreat from.')
       stopBattle(game)
       startEnemyLoad(game, now, 'You retreated. Loading a new enemy...')
+      game.lifetime.retreats++
       break
     case 'setEnemyTier':
       if (!Number.isInteger(action.tier) || action.tier < 1 || action.tier > game.highestEnemyTier) reject('That enemy tier is not unlocked.')
@@ -496,6 +616,7 @@ function performAction(game: Game, action: Action, now: number) {
         game.message = `Critical ${resource.skill} action! ${stats.critPower.toFixed(2)}× faster and stronger.`
         pushEvent(game, 'critical', 'Critical action!', `${resource.name} · ${stats.critPower.toFixed(2)}× speed and yield`)
       } else game.message = `${resource.skill === 'woodcutting' ? 'Chopping' : 'Mining'} ${resource.name}...`
+      game.lifetime.manualGathers++
       break
     }
     case 'craft': {
@@ -523,10 +644,11 @@ function performAction(game: Game, action: Action, now: number) {
     case 'buyWorker': {
       const price = workerPrice(game)
       if (game.gold < price) reject('Not enough gold.')
-      game.gold -= price
+      spendGold(game, price)
       game.workers++
       game.message = 'A new worker joined your settlement.'
       checkAchievements(game)
+      game.lifetime.workersBought++
       break
     }
     case 'buyUpgrade': {
@@ -535,10 +657,11 @@ function performAction(game: Game, action: Action, now: number) {
       if (game.shopUpgrades[upgrade.id] >= upgrade.max) reject('That upgrade is already maxed.')
       const price = shopUpgradeCost(game, upgrade)
       if (game.gold < price) reject('Not enough gold.')
-      game.gold -= price
+      spendGold(game, price)
       game.shopUpgrades[upgrade.id]++
       if (upgrade.id === 'fortitude') game.player.health = Math.min(combatStats(game).maxHealth, game.player.health + 5)
       game.message = `${upgrade.name} improved to rank ${game.shopUpgrades[upgrade.id]}.`
+      game.lifetime.upgradesBought++
       break
     }
     case 'buyGear': {
@@ -549,11 +672,12 @@ function performAction(game: Game, action: Action, now: number) {
       if (index < 0 || path.items[index] !== action.gearId) reject('That is not the next equipment tier.')
       const price = path.prices[index]!
       if (game.gold < price) reject('Not enough gold.')
-      game.gold -= price
+      spendGold(game, price)
       game.ownedGear.push(action.gearId)
       equip(game, action.gearId, now)
       game.message = `${gearCatalog[action.gearId]!.name} purchased and equipped. ${path.name} stock advanced.`
       checkAchievements(game)
+      game.lifetime.gearBought++
       break
     }
     case 'equipGear':
@@ -564,6 +688,8 @@ function performAction(game: Game, action: Action, now: number) {
     default:
       reject('Unknown action.')
   }
+
+  game.lifetime.totalClicks++
   game.revision++
 }
 
@@ -660,6 +786,23 @@ function authorizedGame(
   }
 }
 
+function giveGold(game: Game, amount: number): void {
+  if (amount <= 0) return
+
+  game.gold += amount
+  game.lifetime.goldEarned += amount
+}
+
+function spendGold(game: Game, amount: number): void {
+  if (amount <= 0) return
+  if (game.gold < amount) {
+    reject('Not enough gold.')
+  }
+
+  game.gold -= amount
+  game.lifetime.goldSpent += amount
+}
+
 app.get('/api/health', (_request, response) => response.json({ ok: true, games: games.size }))
 app.get('/api/config', (_request, response) => response.json(config))
 
@@ -734,6 +877,8 @@ app.post('/api/auth/register', async (request, response) => {
     }
 
     gameOwners.set(game.id, username)
+
+    await saveGame(username, game)
 
     return response.status(201).json({
       token: issueToken(username, game.id),
@@ -878,6 +1023,70 @@ app.post('/api/games/:id/actions', async (request, response) => {
 
   return response.json(state)
 })
+
+app.get(
+  '/api/leaderboards/:category',
+  async (request, response) => {
+    const category =
+      request.params.category as LeaderboardCategory
+
+    const leaderboard =
+      leaderboardCategories[category]
+
+    if (!leaderboard) {
+      return response.status(400).json({
+        error: 'Unknown leaderboard category.',
+      })
+    }
+
+    const { data, error } = await supabase
+      .from('leaderboard_stats')
+      .select(`
+        username,
+        display_name,
+        player_level,
+        gold,
+        woodcutting_level,
+        mining_level,
+        total_clicks,
+        monsters_killed,
+        deaths,
+        resources_gathered,
+        items_crafted
+      `)
+      .order(leaderboard.column, {
+        ascending: false,
+      })
+      .order('updated_at', {
+        ascending: true,
+      })
+      .limit(10)
+
+    if (error) {
+      console.error('Leaderboard error:', error)
+
+      return response.status(500).json({
+        error: 'Could not load the leaderboard.',
+      })
+    }
+
+    const rows = (data ?? []).map((player, index) => ({
+      rank: index + 1,
+      username: player.username,
+      name: player.display_name,
+      score:
+        player[
+          leaderboard.column as keyof typeof player
+        ],
+    }))
+
+    return response.json({
+      category,
+      label: leaderboard.label,
+      rows,
+    })
+  },
+)
 
 const tick = setInterval(() => {
   const now = Date.now()

@@ -9,8 +9,9 @@ const {
   woods, rocks, allResources, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, resourceMastery,
   workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, shopUpgrades, achievements, craftingId,
   craftFilter, filteredRecipes, storeListings, materialGroups, toasts,
+  leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
   professionStats, professionXpNeeded, isUnlocked, effectiveDuration, canCraft, shopUpgradeCost, achievementProgress, formatBonus,
-  submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, dismissToast,
+  submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, dismissToast, loadLeaderboard,
 } = useGame()
 </script>
 
@@ -54,4 +55,53 @@ const {
       </article>
     </TransitionGroup>
   </Teleport>
+
+  <section v-if="playerName" class="leaderboard">
+    <h2>High Scores</h2>
+
+    <div class="leaderboard-tabs">
+      <button :class="{ selected: leaderboardCategory === 'level' }" @click="loadLeaderboard('level')">
+        Player Level
+      </button>
+
+      <button :class="{ selected: leaderboardCategory === 'gold' }" @click="loadLeaderboard('gold')">
+        Gold
+      </button>
+
+      <button :class="{ selected: leaderboardCategory === 'woodcutting' }" @click="loadLeaderboard('woodcutting')">
+        Woodcutting
+      </button>
+
+      <button :class="{ selected: leaderboardCategory === 'mining' }" @click="loadLeaderboard('mining')">
+        Mining
+      </button>
+
+      <button :class="{ selected: leaderboardCategory === 'kills' }" @click="loadLeaderboard('kills')">
+        Kills
+      </button>
+    </div>
+
+    <p v-if="leaderboardLoading">
+      Loading leaderboard...
+    </p>
+
+    <p v-else-if="leaderboardError">
+      {{ leaderboardError }}
+    </p>
+
+    <div v-else>
+      <h3>{{ leaderboardLabel }}</h3>
+
+      <ol>
+        <li
+          v-for="player in leaderboardRows"
+          :key="player.username"
+        >
+          <strong>#{{ player.rank }}</strong>
+          <span>{{ player.name }}</span>
+          <b>{{ player.score.toLocaleString() }}</b>
+        </li>
+      </ol>
+    </div>
+  </section>
 </template>
