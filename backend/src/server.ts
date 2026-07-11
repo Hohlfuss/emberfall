@@ -4,6 +4,7 @@ import {
   allResources, gearCatalog, recipes as recipeData, rocks, slotLabels, woods,
   type Bonuses, type GearSlot, type Recipe, type Resource, type Skill,
 } from '../../frontend/src/gameData.ts'
+import { supabase } from "../supabase.ts";
 
 const app = express()
 const port = Number(process.env.PORT) || 3000
@@ -119,9 +120,53 @@ const enemyArchetypes = [
 ]
 const enemyNames = ['Moss Rat', 'Cave Slime', 'Feral Imp', 'Dust Goblin', 'Wild Wolf', 'Stone Drake', 'Void Wraith']
 const games = new Map<string, Game>()
-type Account = { username: string; name: string; salt: string; passwordHash: string; gameId: string }
-const accounts = new Map<string, Account>()
-const tokens = new Map<string, string>()
+
+const tokens = new Map<
+  string,
+  {
+    username: string
+    gameId: string
+  }
+>()
+
+const gameOwners = new Map<string, string>()
+
+type StoredGame = Omit<Game, 'unlockedAchievements'> & {
+  unlockedAchievements: string[]
+}
+
+function serializeGame(game: Game): StoredGame {
+  return {
+    ...game,
+    unlockedAchievements: [...game.unlockedAchievements],
+  }
+}
+
+function deserializeGame(value: unknown): Game {
+  const stored = value as StoredGame
+
+  return {
+    ...stored,
+    unlockedAchievements: new Set(stored.unlockedAchievements ?? []),
+  }
+}
+
+async function saveGame(
+  username: string,
+  game: Game,
+): Promise<void> {
+  const { error } = await supabase
+    .from('players')
+    .update({
+      game_state: serializeGame(game),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('username', username)
+
+  if (error) {
+    throw new Error(`Could not save game: ${error.message}`)
+  }
+}
 
 function xpNeeded(game: Game) { return 100 + (game.level - 1) * 60 }
 function professionXpNeeded(game: Game, skill: Skill) { return Math.round(15 * game.professions[skill].level ** 1.5) }
@@ -577,68 +622,261 @@ function passwordHash(password: string, salt: string) {
   return scryptSync(password, salt, 64).toString('hex')
 }
 
-function issueToken(username: string) {
+function issueToken(username: string, gameId: string): string {
   const token = randomBytes(32).toString('hex')
-  tokens.set(token, username)
+
+  tokens.set(token, {
+    username,
+    gameId,
+  })
+
   return token
 }
 
-function authorizedGame(request: express.Request, gameId: string) {
+function authorizedGame(
+  request: express.Request,
+  gameId: string,
+): { username: string; game: Game } | undefined {
   const header = request.headers.authorization
-  const token = header?.startsWith('Bearer ') ? header.slice(7) : ''
-  const username = tokens.get(token)
-  const account = username ? accounts.get(username) : undefined
-  if (!account || account.gameId !== gameId) return undefined
-  return games.get(gameId)
+  const token = header?.startsWith('Bearer ')
+    ? header.slice(7)
+    : ''
+
+  const session = tokens.get(token)
+
+  if (!session || session.gameId !== gameId) {
+    return undefined
+  }
+
+  const game = games.get(gameId)
+
+  if (!game) {
+    return undefined
+  }
+
+  return {
+    username: session.username,
+    game,
+  }
 }
 
 app.get('/api/health', (_request, response) => response.json({ ok: true, games: games.size }))
 app.get('/api/config', (_request, response) => response.json(config))
 
-app.post('/api/auth/register', (request, response) => {
-  const rawUsername = request.body?.username
-  const rawPassword = request.body?.password
-  if (typeof rawUsername !== 'string' || !/^[a-zA-Z0-9_-]{3,18}$/.test(rawUsername.trim())) return response.status(400).json({ error: 'Username must be 3–18 characters using letters, numbers, _ or -.' })
-  if (typeof rawPassword !== 'string' || rawPassword.length < 8) return response.status(400).json({ error: 'Password must contain at least 8 characters.' })
-  const username = rawUsername.trim().toLowerCase()
-  if (accounts.has(username)) return response.status(409).json({ error: 'That username is already taken.' })
-  const name = rawUsername.trim().slice(0, 18)
-  const salt = randomBytes(16).toString('hex')
-  const game = createGame(name)
-  accounts.set(username, { username, name, salt, passwordHash: passwordHash(rawPassword, salt), gameId: game.id })
-  response.status(201).json({ token: issueToken(username), state: publicState(game) })
+app.post('/api/auth/register', async (request, response) => {
+  try {
+    const rawUsername = request.body?.username
+    const rawPassword = request.body?.password
+
+    if (
+      typeof rawUsername !== 'string' ||
+      !/^[a-zA-Z0-9_-]{3,18}$/.test(rawUsername.trim())
+    ) {
+      return response.status(400).json({
+        error:
+          'Username must be 3–18 characters using letters, numbers, _ or -.',
+      })
+    }
+
+    if (
+      typeof rawPassword !== 'string' ||
+      rawPassword.length < 8
+    ) {
+      return response.status(400).json({
+        error: 'Password must contain at least 8 characters.',
+      })
+    }
+
+    const username = rawUsername.trim().toLowerCase()
+    const name = rawUsername.trim().slice(0, 18)
+
+    const { data: existingPlayer, error: lookupError } =
+      await supabase
+        .from('players')
+        .select('username')
+        .eq('username', username)
+        .maybeSingle()
+
+    if (lookupError) {
+      throw lookupError
+    }
+
+    if (existingPlayer) {
+      return response.status(409).json({
+        error: 'That username is already taken.',
+      })
+    }
+
+    const salt = randomBytes(16).toString('hex')
+    const game = createGame(name)
+
+    const { error: insertError } = await supabase
+      .from('players')
+      .insert({
+        username,
+        name,
+        salt,
+        password_hash: passwordHash(rawPassword, salt),
+        game_id: game.id,
+        game_state: serializeGame(game),
+      })
+
+    if (insertError) {
+      games.delete(game.id)
+
+      if (insertError.code === '23505') {
+        return response.status(409).json({
+          error: 'That username is already taken.',
+        })
+      }
+
+      throw insertError
+    }
+
+    gameOwners.set(game.id, username)
+
+    return response.status(201).json({
+      token: issueToken(username, game.id),
+      state: publicState(game),
+    })
+  } catch (error) {
+    console.error('Registration error:', error)
+
+    return response.status(500).json({
+      error: 'Could not create the account.',
+    })
+  }
 })
 
-app.post('/api/auth/login', (request, response) => {
-  const rawUsername = request.body?.username
-  const rawPassword = request.body?.password
-  if (typeof rawUsername !== 'string' || typeof rawPassword !== 'string') return response.status(400).json({ error: 'Username and password are required.' })
-  const username = rawUsername.trim().toLowerCase()
-  const account = accounts.get(username)
-  if (!account) return response.status(401).json({ error: 'Invalid username or password.' })
-  const supplied = Buffer.from(passwordHash(rawPassword, account.salt), 'hex')
-  const stored = Buffer.from(account.passwordHash, 'hex')
-  if (supplied.length !== stored.length || !timingSafeEqual(supplied, stored)) return response.status(401).json({ error: 'Invalid username or password.' })
-  const game = games.get(account.gameId)
-  if (!game) return response.status(404).json({ error: 'Game session not found. Register again after the backend restart.' })
-  response.json({ token: issueToken(username), state: publicState(game) })
+app.post('/api/auth/login', async (request, response) => {
+  try {
+    const rawUsername = request.body?.username
+    const rawPassword = request.body?.password
+
+    if (
+      typeof rawUsername !== 'string' ||
+      typeof rawPassword !== 'string'
+    ) {
+      return response.status(400).json({
+        error: 'Username and password are required.',
+      })
+    }
+
+    const username = rawUsername.trim().toLowerCase()
+
+    const { data: playerRow, error } = await supabase
+      .from('players')
+      .select(
+        'username, name, salt, password_hash, game_id, game_state',
+      )
+      .eq('username', username)
+      .maybeSingle()
+
+    if (error) {
+      throw error
+    }
+
+    if (!playerRow) {
+      return response.status(401).json({
+        error: 'Invalid username or password.',
+      })
+    }
+
+    const suppliedHash = Buffer.from(
+      passwordHash(rawPassword, playerRow.salt),
+      'hex',
+    )
+
+    const storedHash = Buffer.from(
+      playerRow.password_hash,
+      'hex',
+    )
+
+    if (
+      suppliedHash.length !== storedHash.length ||
+      !timingSafeEqual(suppliedHash, storedHash)
+    ) {
+      return response.status(401).json({
+        error: 'Invalid username or password.',
+      })
+    }
+
+    const game = deserializeGame(playerRow.game_state)
+
+    game.id = playerRow.game_id
+    game.name = playerRow.name
+
+    games.set(game.id, game)
+    gameOwners.set(game.id, username)
+
+    return response.json({
+      token: issueToken(username, game.id),
+      state: publicState(game),
+    })
+  } catch (error) {
+    console.error('Login error:', error)
+
+    return response.status(500).json({
+      error: 'Could not log in.',
+    })
+  }
 })
 
 app.get('/api/games/:id', (request, response) => {
-  const game = authorizedGame(request, request.params.id)
-  if (!game) return response.status(401).json({ error: 'Invalid or expired game session.' })
-  response.json(publicState(game))
+  const session = authorizedGame(
+    request,
+    request.params.id,
+  )
+
+  if (!session) {
+    return response.status(401).json({
+      error: 'Invalid or expired game session.',
+    })
+  }
+
+  return response.json(publicState(session.game))
 })
 
-app.post('/api/games/:id/actions', (request, response) => {
-  const game = authorizedGame(request, request.params.id)
-  if (!game) return response.status(401).json({ error: 'Invalid or expired game session.' })
-  try {
-    performAction(game, request.body as Action, Date.now())
-    response.json(publicState(game))
-  } catch (error) {
-    response.status(409).json({ error: error instanceof Error ? error.message : 'Action failed.' })
+app.post('/api/games/:id/actions', async (request, response) => {
+  const session = authorizedGame(
+    request,
+    request.params.id,
+  )
+
+  if (!session) {
+    return response.status(401).json({
+      error: 'Invalid or expired game session.',
+    })
   }
+
+  try {
+    performAction(
+      session.game,
+      request.body as Action,
+      Date.now(),
+    )
+  } catch (error) {
+    return response.status(409).json({
+      error:
+        error instanceof Error
+          ? error.message
+          : 'Action failed.',
+    })
+  }
+
+  const state = publicState(session.game)
+
+  try {
+    await saveGame(session.username, session.game)
+  } catch (error) {
+    console.error('Game save error:', error)
+
+    return response.status(500).json({
+      error: 'The action worked, but the game could not be saved.',
+    })
+  }
+
+  return response.json(state)
 })
 
 const tick = setInterval(() => {
@@ -646,6 +884,26 @@ const tick = setInterval(() => {
   games.forEach(game => advanceGame(game, now))
 }, 100)
 
+const autosave = setInterval(() => {
+  for (const [gameId, username] of gameOwners) {
+    const game = games.get(gameId)
+
+    if (!game) {
+      continue
+    }
+
+    void saveGame(username, game).catch(error => {
+      console.error(`Autosave failed for ${username}:`, error)
+    })
+  }
+}, 30_000)
+
 const server = app.listen(port, '0.0.0.0', () => {
   console.log(`Emberfall backend running on port ${port}`)
+})
+
+process.on('SIGTERM', () => {
+  clearInterval(tick)
+  clearInterval(autosave)
+  server.close()
 })
