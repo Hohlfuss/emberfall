@@ -819,15 +819,26 @@ function performAction(game: Game, action: Action, now: number) {
       if (!Object.entries(recipe.costs).every(([item, cost]) => (game.inventory[item] || 0) >= cost)) reject('Not enough materials.')
       const craftStats = craftingStats(game)
       const receipt: string[] = []
+      const inventoryBefore = Object.fromEntries(
+        Object.keys(recipe.costs).map(item => [item, Number(game.inventory[item] || 0)]),
+      )
       Object.entries(recipe.costs).forEach(([item, cost]) => {
-        const saved = Math.random() * 100 < craftStats.conservationChance ? 1 : 0
-        const before = Number(game.inventory[item] || 0)
+        const saved = !recipe.outputGear && Math.random() * 100 < craftStats.conservationChance ? 1 : 0
+        const before = inventoryBefore[item]!
         const spent = Math.max(0, Number(cost) - saved)
         game.inventory[item] = before - spent
         if (!Number.isFinite(game.inventory[item]) || game.inventory[item] < 0) reject(`Invalid inventory state for ${item}.`)
         game.lifetime.craftingMaterialsSaved += saved
         receipt.push(`${spent} ${item}${saved ? ' (1 conserved)' : ''}`)
       })
+      const invalidDeduction = Object.entries(recipe.costs).find(([item, cost]) => {
+        const expected = inventoryBefore[item]! - Number(cost)
+        return recipe.outputGear && game.inventory[item] !== expected
+      })
+      if (invalidDeduction) {
+        Object.entries(inventoryBefore).forEach(([item, count]) => { game.inventory[item] = count })
+        reject(`Could not deduct the required ${invalidDeduction[0]}. No materials were consumed.`)
+      }
       const duration = recipe.duration * (1 - craftStats.speed / 100)
       game.crafting = { recipeId: recipe.id, startedAt: now, endsAt: now + duration * 1000, duration }
       game.message = `Crafting ${recipe.name}... Used ${receipt.join(' · ')}.`
