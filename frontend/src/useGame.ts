@@ -2,7 +2,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { Gear, GearSlot, Page, Recipe, Resource, Skill } from './gameData'
 
 type ShopUpgradeId = 'medic' | 'scouting' | 'training' | 'fortitude' | 'autoBattle'
-type ProfessionStats = { speed: number; yield: number; critChance: number; critPower: number; fortune: number; precision: number; xpBonus: number }
+type ProfessionStats = { speed: number; yield: number; critChance: number; critPower: number }
 type GameEvent = { id: number; kind: 'achievement' | 'critical'; title: string; detail: string }
 type Achievement = { id: string; name: string; description: string; goal: number; reward: number; icon: string; progress: number; unlocked: boolean }
 type StorePath = { id: string; name: string; icon: string; items: string[]; prices: number[] }
@@ -58,6 +58,7 @@ export type AuctionListing = { id: string; seller_username: string; seller_name:
 export type OfflineProgress = {
   durationMs: number; gold: number; xp: number; levels: number; kills: number; gathered: number; crafted: number
   items: Array<{ item: string; quantity: number }>
+  gear: Array<{ id: string; name: string; icon: string }>
 }
 
 const API_URL = (
@@ -105,7 +106,7 @@ export function useGame() {
   let chatTimer: ReturnType<typeof setInterval> | undefined
   let requestRunning = false
 
-  const emptyProfessionStats: ProfessionStats = { speed: 0, yield: 1, critChance: 0, critPower: 2, fortune: 0, precision: 0, xpBonus: 0 }
+  const emptyProfessionStats: ProfessionStats = { speed: 0, yield: 1, critChance: 0, critPower: 1.5 }
   const emptyCombat = { maxHealth: 100, attack: 0, defense: 0, attackSpeed: 1800, recoveryTime: 30000, enemyLoadTime: 2000, passiveRegen: .2 }
   const emptyEnemy = { name: 'Loading...', archetype: '', health: 0, maxHealth: 1, attack: 0, defense: 0, attackSpeed: 0, xp: 0, gold: 0 }
   const emptyEquipment = { weapon: undefined, helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: undefined, hatchet: undefined } satisfies Record<GearSlot, string | undefined>
@@ -210,8 +211,8 @@ export function useGame() {
   })
 
   function formatBonus(stat: string, amount: number) {
-    const labels: Record<string, string> = { attack: 'Attack', defense: 'Defense', maxHealth: 'Health', attackSpeed: 'Attack speed', woodSpeed: 'WC speed', miningSpeed: 'Mining speed', woodYield: 'WC yield', miningYield: 'Mining yield', woodCrit: 'WC crit', miningCrit: 'Mining crit', critPower: 'Crit power', fortune: 'Fortune', recoverySpeed: 'Recovery time', encounterSpeed: 'Enemy load time' }
-    const percent = stat.includes('Speed') && stat !== 'attackSpeed' || stat.includes('Crit') || stat === 'fortune'
+    const labels: Record<string, string> = { attack: 'Attack', defense: 'Defense', maxHealth: 'Health', attackSpeed: 'Attack speed', woodSpeed: 'WC speed', miningSpeed: 'Mining speed', woodYield: 'WC yield', miningYield: 'Mining yield', woodCrit: 'WC quick chance', miningCrit: 'Mining quick chance', critPower: 'Quick speed', recoverySpeed: 'Recovery time', encounterSpeed: 'Enemy load time' }
+    const percent = stat.includes('Speed') && stat !== 'attackSpeed' || stat.includes('Crit')
     const value = stat === 'attackSpeed' || stat === 'recoverySpeed' || stat === 'encounterSpeed' ? '-' + amount + 'ms' : stat === 'critPower' ? '+' + amount + '×' : '+' + amount + (percent ? '%' : '')
     return value + ' ' + (labels[stat] || stat)
   }
@@ -238,7 +239,8 @@ export function useGame() {
       `Effective time: ${effectiveDuration(resource).toFixed(1)}s`,
       `Current base yield: ${stats.yield}`,
       `Mastery: ${mastery} (+${Math.floor(mastery / 10)}% speed)`,
-      `Rare finds become more likely at higher tiers and Fortune.`,
+      `Quick harvest: ${stats.critChance.toFixed(1)}% chance to finish ${stats.critPower.toFixed(2)}× faster (yield stays ${stats.yield}).`,
+      `Rare materials have a small resource-tier-based drop chance.`,
     ].join('\n')
   }
 
