@@ -3,6 +3,7 @@ import { nextTick, onMounted, onUpdated } from 'vue'
 import { useGame } from './useGame'
 import type { Skill } from './gameData'
 import ChatPanel from './ChatPanel.vue'
+import AuctionHouse from './AuctionHouse.vue'
 
 const {
   tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authLoading, serverOnline, backendError, playerName, gold, level, xp, xpNeeded, message, player, combatStats, dps,
@@ -13,8 +14,9 @@ const {
   craftFilter, filteredRecipes, storeListings, materialGroups, toasts,
   leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
   chatMessages, chatOnline, chatError,
+  auctionListings, auctionError,
   professionStats, professionXpNeeded, isUnlocked, effectiveDuration, canCraft, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip, recipeTooltip,
-  submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, dismissToast, loadLeaderboard, sendChat,
+  submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, dismissToast, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
 } = useGame()
 
 function refreshHoverTitles() {
@@ -47,7 +49,7 @@ onUpdated(refreshHoverTitles)
 
 <template>
   <div v-if="!playerName" class="name-screen"><form class="name-card auth-card" @submit.prevent="submitAuth"><div class="crest">E</div><p class="eyebrow">WELCOME TO EMBERFALL</p><h1>{{ authMode === 'login' ? 'Welcome back' : 'Create account' }}</h1><p>{{ authMode === 'login' ? 'Return to your adventure.' : 'Create your hero and begin a new tale.' }}</p><div class="auth-tabs"><button type="button" :class="{ selected: authMode === 'login' }" @click="switchAuthMode('login')">LOGIN</button><button type="button" :class="{ selected: authMode === 'register' }" @click="switchAuthMode('register')">REGISTER</button></div><input v-model="authUsername" maxlength="18" placeholder="Username" autocomplete="username" required><input v-model="authPassword" type="password" minlength="8" placeholder="Password (8+ characters)" :autocomplete="authMode === 'login' ? 'current-password' : 'new-password'" required><input v-if="authMode === 'register'" v-model="authConfirmPassword" type="password" minlength="8" placeholder="Confirm password" autocomplete="new-password" required><p v-if="authError" class="auth-error" role="alert">{{ authError }}</p><p v-if="!serverOnline" class="auth-error" role="status">{{ backendError }}</p><button class="primary" :disabled="!serverOnline || authLoading || !authUsername.trim() || authPassword.length < 8 || (authMode === 'register' && authConfirmPassword !== authPassword)">{{ authLoading ? 'PLEASE WAIT…' : authMode === 'login' ? 'ENTER EMBERFALL' : 'CREATE HERO' }}</button></form></div>
-  <main v-else class="game-shell" :class="{ 'high-scores-open': page === 'high scores' }">
+  <main v-else class="game-shell" :class="{ 'high-scores-open': page === 'high scores', 'auction-open': page === 'auction' }">
     <div v-if="!serverOnline" class="backend-offline"><strong>SERVER OFFLINE</strong><span>{{ backendError }}</span></div>
     <header class="topbar"><div class="brand"><span class="brand-mark">E</span><span>EMBERFALL</span></div><div class="xp-area"><div class="xp-copy"><span>LEVEL {{ level }}</span><strong>{{ xp }} / {{ xpNeeded }} XP</strong></div><div class="xp-bar"><i :style="{ width: xpPercent }"></i></div></div><div class="wallet">◈ {{ gold.toLocaleString() }} <span>GOLD</span></div></header>
     <nav class="nav-tabs"><button v-for="tab in tabs" :key="tab" :class="{ selected: page === tab }" @click="page = tab">{{ tab }}</button></nav>
@@ -77,6 +79,7 @@ onUpdated(refreshHoverTitles)
 
     <section v-else class="page-content"><div class="page-heading"><div><p class="eyebrow">SETTLEMENT MARKET</p><h1>Shop</h1><p>Each equipment shelf displays only your next unowned tier. Buying or crafting it advances that shelf.</p></div></div><div class="shop-grid"><div class="equipment-store"><h2>Equipment merchant</h2><div class="store-shelves"><article v-for="listing in storeListings" :key="listing.id" class="store-listing"><template v-if="listing.item"><b>{{ listing.item.icon }}</b><div><span class="tier">{{ listing.name }} · NEXT TIER {{ listing.item.tier }}</span><h3>{{ listing.item.name }}</h3><p>{{ listing.item.description }}</p><small>{{ Object.entries(listing.item.bonuses).map(([stat,value]) => formatBonus(stat, Number(value))).join(' · ') }}</small></div><button @click="buyStoreGear(listing)" :disabled="gold < listing.price || !!craftingId">BUY · {{ listing.price.toLocaleString() }} GOLD</button></template><template v-else><b>✓</b><div><span class="tier">{{ listing.name }}</span><h3>All tiers owned</h3><p>This shelf is complete.</p></div><button disabled>SOLD OUT</button></template></article></div></div><article class="shop-card worker-shop"><div class="worker-art">♟</div><div><span class="tier">PERMANENT WORKER</span><h2>Hire a Gatherer</h2><p>Assign to any unlocked material. Level 2 and level 10 each award one free worker.</p><small>Owned: {{ workers }}</small></div><button class="primary" @click="buyWorker" :disabled="gold < workerPrice">HIRE · {{ workerPrice.toLocaleString() }} GOLD</button></article><article v-for="upgrade in shopUpgradeDetails" :key="upgrade.id" class="service-card"><b>{{ upgrade.icon }}</b><div><span class="tier">RANK {{ shopUpgrades[upgrade.id] }} / {{ upgrade.max }}</span><h3>{{ upgrade.name }}</h3><p>{{ upgrade.description }}</p></div><button @click="buyShopUpgrade(upgrade)" :disabled="shopUpgrades[upgrade.id] >= upgrade.max || gold < shopUpgradeCost(upgrade)">{{ shopUpgrades[upgrade.id] >= upgrade.max ? 'MAXIMUM RANK' : `UPGRADE · ${shopUpgradeCost(upgrade).toLocaleString()} GOLD` }}</button></article></div></section>
   </main>
+  <AuctionHouse v-if="playerName && page === 'auction'" :listings="auctionListings" :inventory="inventory" :gold="gold" :player-name="playerName" :error="auctionError" @refresh="loadAuction" @create="createAuction" @buy="buyAuction" @cancel="cancelAuction" />
   <ChatPanel v-if="playerName" :messages="chatMessages" :online="chatOnline" :error="chatError" @send="sendChat" />
   <Teleport to="body">
     <TransitionGroup name="toast" tag="div" class="toast-stack" aria-live="polite">

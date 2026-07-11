@@ -50,7 +50,7 @@ app.use(express.json())
 app.use((request, response, next) => {
   response.setHeader('Access-Control-Allow-Origin', '*')
   response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-  response.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+  response.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS')
   if (request.method === 'OPTIONS') return response.sendStatus(204)
   next()
 })
@@ -1086,6 +1086,73 @@ app.post('/api/chat', (request, response) => {
   if (chatMessages.length > CHAT_LIMIT) chatMessages.splice(0, chatMessages.length - CHAT_LIMIT)
 
   return response.status(201).json({ messages: chatMessages, online: onlineCount() })
+})
+
+app.get('/api/auction', async (request, response) => {
+  if (!chatSession(request)) return response.status(401).json({ error: 'Log in to use the auction house.' })
+  const { data, error } = await supabase.from('auction_listings').select('*').order('created_at', { ascending: false }).limit(100)
+  if (error) return response.status(500).json({ error: 'Could not load auctions. Apply backend/auction-schema.sql in Supabase first.' })
+  return response.json({ listings: data })
+})
+
+app.post('/api/auction', async (request, response) => {
+  const session = chatSession(request)
+  if (!session) return response.status(401).json({ error: 'Log in to create a listing.' })
+  const game = games.get(session.gameId)
+  const item = typeof request.body?.item === 'string' ? request.body.item : ''
+  const quantity = Number(request.body?.quantity)
+  const price = Number(request.body?.price)
+  if (!game || !item || !Number.isInteger(quantity) || quantity < 1 || !Number.isInteger(price) || price < 1) {
+    return response.status(400).json({ error: 'Choose an item, quantity, and positive whole-number price.' })
+  }
+  if ((game.inventory[item] || 0) < quantity) return response.status(409).json({ error: 'You do not own enough of that item.' })
+
+  game.inventory[item] -= quantity
+  const listing = { id: randomUUID(), seller_username: session.username, seller_name: game.name, item_name: item, quantity, price, created_at: new Date().toISOString() }
+  const { error } = await supabase.from('auction_listings').insert(listing)
+  if (error) {
+    game.inventory[item] += quantity
+    return response.status(500).json({ error: 'Could not create listing. Apply backend/auction-schema.sql in Supabase first.' })
+  }
+  await saveGame(session.username, game)
+  game.revision++
+  return response.status(201).json({ listing, state: publicState(game) })
+})
+
+app.post('/api/auction/:id/buy', async (request, response) => {
+  const buyerSession = chatSession(request)
+  if (!buyerSession) return response.status(401).json({ error: 'Log in to buy an auction.' })
+  const buyer = games.get(buyerSession.gameId)
+  const { data: listing, error } = await supabase.from('auction_listings').select('*').eq('id', request.params.id).maybeSingle()
+  if (error || !listing) return response.status(404).json({ error: 'That listing is no longer available.' })
+  if (!buyer || listing.seller_username === buyerSession.username) return response.status(409).json({ error: 'You cannot buy your own listing.' })
+  if (buyer.gold < listing.price) return response.status(409).json({ error: 'Not enough gold.' })
+
+  const { data: sellerRow } = await supabase.from('players').select('game_state').eq('username', listing.seller_username).single()
+  if (!sellerRow) return response.status(409).json({ error: 'The seller could not be loaded.' })
+  const seller = [...games.values()].find(game => gameOwners.get(game.id) === listing.seller_username) || deserializeGame(sellerRow.game_state)
+  const { data: removed } = await supabase.from('auction_listings').delete().eq('id', listing.id).select('id').maybeSingle()
+  if (!removed) return response.status(409).json({ error: 'Someone else already bought that listing.' })
+
+  spendGold(buyer, listing.price)
+  buyer.inventory[listing.item_name] = (buyer.inventory[listing.item_name] || 0) + listing.quantity
+  giveGold(seller, listing.price)
+  buyer.revision++
+  seller.revision++
+  await Promise.all([saveGame(buyerSession.username, buyer), saveGame(listing.seller_username, seller)])
+  return response.json({ state: publicState(buyer) })
+})
+
+app.delete('/api/auction/:id', async (request, response) => {
+  const session = chatSession(request)
+  if (!session) return response.status(401).json({ error: 'Log in to cancel a listing.' })
+  const game = games.get(session.gameId)
+  const { data: listing } = await supabase.from('auction_listings').delete().eq('id', request.params.id).eq('seller_username', session.username).select('*').maybeSingle()
+  if (!game || !listing) return response.status(404).json({ error: 'Listing not found or not owned by you.' })
+  game.inventory[listing.item_name] = (game.inventory[listing.item_name] || 0) + listing.quantity
+  game.revision++
+  await saveGame(session.username, game)
+  return response.json({ state: publicState(game) })
 })
 
 app.get(

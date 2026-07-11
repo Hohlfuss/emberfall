@@ -45,6 +45,7 @@ type LeaderboardEntry = {
   score: number
 }
 export type ChatMessage = { id: string; username: string; name: string; message: string; createdAt: string }
+export type AuctionListing = { id: string; seller_username: string; seller_name: string; item_name: string; quantity: number; price: number; created_at: string }
 
 const API_URL = (
   import.meta.env.VITE_API_URL || 'http://localhost:3000'
@@ -55,7 +56,7 @@ function apiUrl(path: string): string {
 }
 
 export function useGame() {
-  const tabs: Page[] = ['battle', 'woodcutting', 'mining', 'crafting', 'workers', 'inventory', 'achievements', 'high scores', 'shop']
+  const tabs: Page[] = ['battle', 'woodcutting', 'mining', 'crafting', 'workers', 'inventory', 'achievements', 'auction', 'high scores', 'shop']
   const page = ref<Page>('battle')
   const authMode = ref<'login' | 'register'>('login')
   const authUsername = ref('')
@@ -80,6 +81,8 @@ export function useGame() {
   const chatMessages = ref<ChatMessage[]>([])
   const chatOnline = ref(0)
   const chatError = ref('')
+  const auctionListings = ref<AuctionListing[]>([])
+  const auctionError = ref('')
   const seenEventIds = new Set<number>()
   const toastTimers = new Map<number, ReturnType<typeof setTimeout>>()
   let nextToastId = 1
@@ -318,6 +321,31 @@ export function useGame() {
     }
   }
 
+  async function loadAuction() {
+    if (!authToken.value) return
+    try {
+      const result = await readJson<{ listings: AuctionListing[] }>(await fetch(apiUrl('/api/auction'), { headers: { Authorization: `Bearer ${authToken.value}` } }))
+      auctionListings.value = result.listings
+      auctionError.value = ''
+    } catch (error) { auctionError.value = error instanceof Error ? error.message : 'Auction unavailable.' }
+  }
+
+  async function auctionRequest(path: string, method: string, body?: unknown) {
+    try {
+      const result = await readJson<{ state: ServerState }>(await fetch(apiUrl(path), {
+        method,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken.value}` },
+        body: body ? JSON.stringify(body) : undefined,
+      }))
+      if (result.state) applyServerState(result.state)
+      await loadAuction()
+      return true
+    } catch (error) { auctionError.value = error instanceof Error ? error.message : 'Auction action failed.'; return false }
+  }
+  const createAuction = (item: string, quantity: number, price: number) => auctionRequest('/api/auction', 'POST', { item, quantity, price })
+  const buyAuction = (id: string) => auctionRequest(`/api/auction/${id}/buy`, 'POST')
+  const cancelAuction = (id: string) => auctionRequest(`/api/auction/${id}`, 'DELETE')
+
   async function loadConfig() {
     config.value = await readJson<GameConfig>(
       await fetch(apiUrl('/api/config')),
@@ -370,6 +398,7 @@ export function useGame() {
       applyServerState(result.state)
       startPolling()
       void loadChat()
+      void loadAuction()
       clearInterval(chatTimer)
       chatTimer = setInterval(loadChat, 2000)
     } catch (error) {
@@ -434,7 +463,8 @@ export function useGame() {
     craftFilter, filteredRecipes, storeListings, materialGroups, toasts,
     leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
     chatMessages, chatOnline, chatError,
+    auctionListings, auctionError,
     professionStats, professionXpNeeded, isUnlocked, effectiveDuration, canCraft, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip, recipeTooltip,
-    submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, dismissToast, loadLeaderboard, sendChat,
+    submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, dismissToast, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
   }
 }

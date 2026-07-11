@@ -1,4 +1,4 @@
-export type Page = 'battle' | 'woodcutting' | 'mining' | 'crafting' | 'workers' | 'inventory' | 'achievements' | 'high scores' | 'shop'
+export type Page = 'battle' | 'woodcutting' | 'mining' | 'crafting' | 'workers' | 'inventory' | 'achievements' | 'auction' | 'high scores' | 'shop'
 export type Skill = 'woodcutting' | 'mining'
 export type GearSlot = 'weapon' | 'helmet' | 'chest' | 'legs' | 'boots' | 'gloves' | 'ring' | 'amulet' | 'pickaxe' | 'hatchet'
 
