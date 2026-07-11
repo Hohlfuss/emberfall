@@ -32,6 +32,8 @@ function refreshHoverTitles() {
   void nextTick(() => {
     const workerRewardText = document.querySelector<HTMLElement>('.worker-shop p')
     if (workerRewardText) workerRewardText.textContent = 'Assign workers to unlocked materials. Level 2 awards your first free worker, then every 10 levels awards another.'
+    const combatTimingText = document.querySelector<HTMLElement>('.battle-controls small + small')
+    if (combatTimingText) combatTimingText.textContent = 'Base recovery: 30s · Base next-enemy load time: 2s · Both can be upgraded'
     document.querySelectorAll<HTMLElement>('.resource-card').forEach((card, index) => {
       const resources = page.value === 'woodcutting' ? woods.value : rocks.value
       if (resources[index]) card.title = resourceTooltip(resources[index])

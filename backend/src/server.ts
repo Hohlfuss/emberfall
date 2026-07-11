@@ -276,6 +276,10 @@ function deserializeGame(value: unknown): Game {
     factions: stored.factions ?? { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } },
     daily: stored.daily ?? createDailyState(stored.lifetime ?? createLifetimeStats()),
     workers: stored.level >= 2 && stored.workers === 0 ? 1 : stored.workers,
+    player: {
+      ...stored.player,
+      baseRecoveryTime: Math.max(30_000, stored.player?.baseRecoveryTime ?? 30_000),
+    },
     shopUpgrades: {
       medic: stored.shopUpgrades?.medic ?? 0,
       scouting: stored.shopUpgrades?.scouting ?? 0,
@@ -748,7 +752,7 @@ function createGame(name: string): Game {
   const game: Game = {
     id: randomUUID(), revision: 0, lastAdvancedAt: now, name, gold: 0, level: 1, xp: 0,
     message: `Welcome, ${name}. Your adventure begins.`,
-    player: { health: 100, baseMaxHealth: 100, baseAttack: 10, baseDefense: 3, baseAttackSpeed: 1800, baseRecoveryTime: 10000, baseEnemyLoadTime: 2000, basePassiveRegen: .2, regenBuffer: 0 },
+    player: { health: 100, baseMaxHealth: 100, baseAttack: 10, baseDefense: 3, baseAttackSpeed: 1800, baseRecoveryTime: 30000, baseEnemyLoadTime: 2000, basePassiveRegen: .2, regenBuffer: 0 },
     inventory: {}, ownedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe'], unlockedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe'],
     equipment: { weapon: 'rustySword', helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: 'crackedPickaxe', hatchet: 'wornHatchet' },
     professions: { woodcutting: { level: 1, xp: 0 }, mining: { level: 1, xp: 0 } }, craftingProfession: { level: 1, xp: 0 }, resourceMastery: {}, jobs: {},
