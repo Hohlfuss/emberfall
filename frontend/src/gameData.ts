@@ -1,4 +1,4 @@
-export type Page = 'battle' | 'woodcutting' | 'mining' | 'crafting' | 'workers' | 'inventory' | 'achievements' | 'shop'
+export type Page = 'battle' | 'woodcutting' | 'mining' | 'crafting' | 'workers' | 'inventory' | 'achievements' | 'high scores' | 'shop'
 export type Skill = 'woodcutting' | 'mining'
 export type GearSlot = 'weapon' | 'helmet' | 'chest' | 'legs' | 'boots' | 'gloves' | 'ring' | 'amulet' | 'pickaxe' | 'hatchet'
 
@@ -91,7 +91,9 @@ export const gearCatalog: Record<string, Gear> = {
   pineHatchet: { id: 'pineHatchet', name: 'Pinebound Hatchet', slot: 'hatchet', tier: 1, icon: '🪓', description: 'A balanced early logging tool.', bonuses: { woodSpeed: 12, woodYield: 1, woodCrit: 3 } },
   copperPickaxe: { id: 'copperPickaxe', name: 'Copper Pickaxe', slot: 'pickaxe', tier: 1, icon: '⛏️', description: 'Reliable on shallow deposits.', bonuses: { miningSpeed: 12, miningYield: 1, miningCrit: 3 } },
   oakHatchet: { id: 'oakHatchet', name: 'Oaksteel Hatchet', slot: 'hatchet', tier: 3, icon: '🪓', description: 'Bites deep into dense timber.', bonuses: { woodSpeed: 25, woodYield: 2, woodCrit: 7, critPower: .25 } },
+  mapleHatchet: { id: 'mapleHatchet', name: 'Ember Maple Hatchet', slot: 'hatchet', tier: 4, icon: '🪓', description: 'A resin-treated blade made for long expeditions.', bonuses: { woodSpeed: 33, woodYield: 2, woodCrit: 10, critPower: .4, fortune: 3 } },
   ironPickaxe: { id: 'ironPickaxe', name: 'Iron Pickaxe', slot: 'pickaxe', tier: 3, icon: '⛏️', description: 'Breaks stubborn rock with ease.', bonuses: { miningSpeed: 25, miningYield: 2, miningCrit: 7, critPower: .25 } },
+  silverPickaxe: { id: 'silverPickaxe', name: 'Silvervein Pickaxe', slot: 'pickaxe', tier: 6, icon: '⛏️', description: 'Its tuned head reveals valuable seams.', bonuses: { miningSpeed: 40, miningYield: 3, miningCrit: 12, critPower: .5, fortune: 5 } },
   yewHatchet: { id: 'yewHatchet', name: 'Yew Moon Hatchet', slot: 'hatchet', tier: 6, icon: '🪓', description: 'A master logger’s enchanted blade.', bonuses: { woodSpeed: 42, woodYield: 3, woodCrit: 12, critPower: .5, fortune: 5 } },
   mythrilPickaxe: { id: 'mythrilPickaxe', name: 'Mythril Pickaxe', slot: 'pickaxe', tier: 10, icon: '⛏️', description: 'Makes the mountain feel hollow.', bonuses: { miningSpeed: 55, miningYield: 4, miningCrit: 15, critPower: .75, fortune: 8 } },
   ironSword: { id: 'ironSword', name: 'Iron Longsword', slot: 'weapon', tier: 3, icon: '⚔️', description: 'A proper adventurer’s weapon.', bonuses: { attack: 10, attackSpeed: 100 } },
@@ -122,7 +124,9 @@ export const recipes: Recipe[] = [
   { id: 'pineHatchetRecipe', name: 'Pinebound Hatchet', category: 'tools', description: 'Craft an equippable tier I hatchet.', duration: 25, costs: { 'Pine Plank': 3, Stone: 4 }, outputGear: 'pineHatchet', progress: 0 },
   { id: 'copperPickaxeRecipe', name: 'Copper Pickaxe', category: 'tools', description: 'Craft an equippable tier I pickaxe.', duration: 28, costs: { 'Pine Plank': 2, 'Copper Ingot': 2 }, outputGear: 'copperPickaxe', progress: 0 },
   { id: 'oakHatchetRecipe', name: 'Oaksteel Hatchet', category: 'tools', description: 'A fast, high-yield logging tool.', duration: 55, costs: { 'Oak Log': 10, 'Iron Ingot': 4 }, outputGear: 'oakHatchet', progress: 0 },
+  { id: 'mapleHatchetRecipe', name: 'Ember Maple Hatchet', category: 'tools', description: 'A fortunate mid-tier hatchet with excellent critical chance.', duration: 78, costs: { 'Maple Log': 12, 'Iron Ingot': 5, 'Ancient Resin': 2 }, outputGear: 'mapleHatchet', progress: 0 },
   { id: 'ironPickaxeRecipe', name: 'Iron Pickaxe', category: 'tools', description: 'A fast, high-yield mining tool.', duration: 55, costs: { 'Oak Log': 6, 'Iron Ingot': 5 }, outputGear: 'ironPickaxe', progress: 0 },
+  { id: 'silverPickaxeRecipe', name: 'Silvervein Pickaxe', category: 'tools', description: 'An advanced pickaxe tuned for rare finds.', duration: 105, costs: { 'Yew Log': 8, 'Silver Ingot': 6, 'Ore Crystal': 2 }, outputGear: 'silverPickaxe', progress: 0 },
   { id: 'yewHatchetRecipe', name: 'Yew Moon Hatchet', category: 'tools', description: 'Exceptional speed, yield, and critical power.', duration: 110, costs: { 'Yew Log': 12, 'Silver Ingot': 6, Obsidian: 3 }, outputGear: 'yewHatchet', progress: 0 },
   { id: 'mythrilPickaxeRecipe', name: 'Mythril Pickaxe', category: 'tools', description: 'The ultimate tool for deep mining.', duration: 180, costs: { 'Worldroot Log': 5, 'Mythril Ingot': 8, Moonstone: 4 }, outputGear: 'mythrilPickaxe', progress: 0 },
   { id: 'ironSwordRecipe', name: 'Iron Longsword', category: 'combat', description: 'A large improvement to attack damage.', duration: 45, costs: { 'Iron Ingot': 4, 'Oak Log': 4 }, outputGear: 'ironSword', progress: 0 },
@@ -139,6 +143,9 @@ export const recipes: Recipe[] = [
   { id: 'graniteBlock', name: 'Polished Granite', category: 'components', description: 'A durable component for advanced gear.', duration: 48, costs: { Granite: 4 }, outputItem: 'Granite Block', outputQty: 1, progress: 0 },
   { id: 'goldIngot', name: 'Gold Ingot', category: 'components', description: 'Refined gold that holds enchantments well.', duration: 65, costs: { 'Gold Ore': 4, Obsidian: 1 }, outputItem: 'Gold Ingot', outputQty: 1, progress: 0 },
   { id: 'obsidianPlate', name: 'Obsidian Plate', category: 'components', description: 'Fused volcanic glass and iron.', duration: 72, costs: { Obsidian: 4, 'Iron Ingot': 2 }, outputItem: 'Obsidian Plate', outputQty: 1, progress: 0 },
+  { id: 'resinBinding', name: 'Resin Binding', category: 'components', description: 'Flexible reinforcement made from rare tree resin.', duration: 30, costs: { 'Ancient Resin': 2, 'Birch Plank': 1 }, outputItem: 'Resin Binding', outputQty: 2, progress: 0 },
+  { id: 'cutGem', name: 'Cut Gem', category: 'components', description: 'A rough gem shaped for accessories and enchantments.', duration: 42, costs: { 'Rough Gem': 3, 'Silver Ingot': 1 }, outputItem: 'Cut Gem', outputQty: 1, progress: 0 },
+  { id: 'crystalLens', name: 'Crystal Lens', category: 'components', description: 'A focused ore crystal for precision equipment.', duration: 55, costs: { 'Ore Crystal': 3, 'Gold Ingot': 1 }, outputItem: 'Crystal Lens', outputQty: 1, progress: 0 },
   { id: 'bronzeSwordRecipe', name: 'Bronze Shortsword', category: 'combat', description: 'An accessible weapon needed for tier III.', duration: 32, costs: { 'Copper Ingot': 2, 'Pine Plank': 1 }, outputGear: 'bronzeSword', progress: 0 },
   { id: 'copperHelmRecipe', name: 'Copper Cap', category: 'combat', description: 'Early health and defense.', duration: 30, costs: { 'Copper Ingot': 2, 'Pine Plank': 1 }, outputGear: 'copperHelm', progress: 0 },
   { id: 'copperChestRecipe', name: 'Copper Scale Vest', category: 'combat', description: 'Early armor for surviving tier II and III.', duration: 45, costs: { 'Copper Ingot': 4, 'Birch Plank': 2 }, outputGear: 'copperChest', progress: 0 },

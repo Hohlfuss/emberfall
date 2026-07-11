@@ -130,8 +130,8 @@ type Action =
   | { type: 'equipGear'; gearId: string }
 
 const storePaths = [
-  { id: 'hatchets', name: 'Hatchets', icon: '🪓', items: ['pineHatchet', 'oakHatchet', 'yewHatchet'], prices: [175, 1800, 16000] },
-  { id: 'pickaxes', name: 'Pickaxes', icon: '⛏️', items: ['copperPickaxe', 'ironPickaxe', 'mythrilPickaxe'], prices: [200, 2000, 32000] },
+  { id: 'hatchets', name: 'Hatchets', icon: '🪓', items: ['pineHatchet', 'oakHatchet', 'mapleHatchet', 'yewHatchet'], prices: [175, 1800, 6500, 16000] },
+  { id: 'pickaxes', name: 'Pickaxes', icon: '⛏️', items: ['copperPickaxe', 'ironPickaxe', 'silverPickaxe', 'mythrilPickaxe'], prices: [200, 2000, 9000, 32000] },
   { id: 'weapons', name: 'Weapons', icon: '⚔️', items: ['bronzeSword', 'ironSword', 'silverSaber'], prices: [250, 2400, 18000] },
   { id: 'helmets', name: 'Helmets', icon: '🪖', items: ['copperHelm', 'ironHelm', 'obsidianHelm'], prices: [275, 2600, 20000] },
   { id: 'chestArmor', name: 'Chest armor', icon: '🥋', items: ['copperChest', 'ironChest', 'obsidianChest'], prices: [400, 3600, 28000] },

@@ -54,7 +54,7 @@ function apiUrl(path: string): string {
 }
 
 export function useGame() {
-  const tabs: Page[] = ['battle', 'woodcutting', 'mining', 'crafting', 'workers', 'inventory', 'achievements', 'shop']
+  const tabs: Page[] = ['battle', 'woodcutting', 'mining', 'crafting', 'workers', 'inventory', 'achievements', 'high scores', 'shop']
   const page = ref<Page>('battle')
   const authMode = ref<'login' | 'register'>('login')
   const authUsername = ref('')
@@ -182,6 +182,44 @@ export function useGame() {
     const percent = stat.includes('Speed') && stat !== 'attackSpeed' || stat.includes('Crit') || stat === 'fortune'
     const value = stat === 'attackSpeed' || stat === 'recoverySpeed' || stat === 'encounterSpeed' ? '-' + amount + 'ms' : stat === 'critPower' ? '+' + amount + '×' : '+' + amount + (percent ? '%' : '')
     return value + ' ' + (labels[stat] || stat)
+  }
+
+  function gearTooltip(gear: Gear) {
+    const equippedId = equipment.value[gear.slot]
+    const equipped = equippedId ? gearCatalog.value[equippedId] : undefined
+    const changes = Object.entries(gear.bonuses).map(([stat, amount]) => {
+      const current = Number(equipped?.bonuses[stat as keyof Gear['bonuses']] || 0)
+      const difference = Number(amount) - current
+      const comparison = difference === 0 ? 'same as equipped' : `${difference > 0 ? '+' : ''}${difference} vs equipped`
+      return `${formatBonus(stat, Number(amount))} (${comparison})`
+    })
+    return [gear.name, gear.description, ...changes].join('\n')
+  }
+
+  function resourceTooltip(resource: Resource) {
+    const mastery = resourceMastery.value[resource.id] || 0
+    const stats = professionStats(resource.skill)
+    return [
+      resource.name,
+      `Requires ${resource.skill} level ${resource.tier}`,
+      `Produces ${resource.item}`,
+      `Effective time: ${effectiveDuration(resource).toFixed(1)}s`,
+      `Current base yield: ${stats.yield}`,
+      `Mastery: ${mastery} (+${Math.floor(mastery / 10)}% speed)`,
+      `Rare finds become more likely at higher tiers and Fortune.`,
+    ].join('\n')
+  }
+
+  function recipeTooltip(recipe: Recipe) {
+    const output = recipe.outputGear ? gearCatalog.value[recipe.outputGear] : undefined
+    const costs = Object.entries(recipe.costs).map(([item, amount]) => `${amount} × ${item}`).join(', ')
+    return [
+      recipe.name,
+      recipe.description,
+      `Craft time: ${recipe.duration}s`,
+      `Materials: ${costs}`,
+      output ? gearTooltip(output) : `Creates ${recipe.outputQty || 1} × ${recipe.outputItem}`,
+    ].join('\n')
   }
 
   function showToast(event: GameEvent) {
@@ -353,7 +391,7 @@ export function useGame() {
     workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, shopUpgrades, achievements, craftingId,
     craftFilter, filteredRecipes, storeListings, materialGroups, toasts,
     leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
-    professionStats, professionXpNeeded, isUnlocked, effectiveDuration, canCraft, shopUpgradeCost, achievementProgress, formatBonus,
+    professionStats, professionXpNeeded, isUnlocked, effectiveDuration, canCraft, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip, recipeTooltip,
     submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, dismissToast, loadLeaderboard,
   }
 }

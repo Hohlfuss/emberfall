@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { nextTick, onMounted, onUpdated } from 'vue'
 import { useGame } from './useGame'
 import type { Skill } from './gameData'
 
@@ -10,9 +11,36 @@ const {
   workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, shopUpgrades, achievements, craftingId,
   craftFilter, filteredRecipes, storeListings, materialGroups, toasts,
   leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
-  professionStats, professionXpNeeded, isUnlocked, effectiveDuration, canCraft, shopUpgradeCost, achievementProgress, formatBonus,
+  professionStats, professionXpNeeded, isUnlocked, effectiveDuration, canCraft, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip, recipeTooltip,
   submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, dismissToast, loadLeaderboard,
 } = useGame()
+
+function refreshHoverTitles() {
+  void nextTick(() => {
+    document.querySelectorAll<HTMLElement>('.resource-card').forEach((card, index) => {
+      const resources = page.value === 'woodcutting' ? woods.value : rocks.value
+      if (resources[index]) card.title = resourceTooltip(resources[index])
+    })
+    document.querySelectorAll<HTMLElement>('.recipe-card').forEach((card, index) => {
+      if (filteredRecipes.value[index]) card.title = recipeTooltip(filteredRecipes.value[index])
+    })
+    document.querySelectorAll<HTMLElement>('.equipment-slot').forEach((card, index) => {
+      const id = equipment.value[gearSlots.value[index]]
+      card.title = id ? gearTooltip(gearCatalog.value[id]) : `Empty ${slotLabels.value[gearSlots.value[index]]} slot`
+    })
+    document.querySelectorAll<HTMLElement>('.gear-bag article').forEach((card, index) => {
+      const gear = gearCatalog.value[ownedGear.value[index]]
+      if (gear) card.title = gearTooltip(gear)
+    })
+    document.querySelectorAll<HTMLElement>('.store-listing').forEach((card, index) => {
+      const gear = storeListings.value[index]?.item
+      if (gear) card.title = `${gearTooltip(gear)}\nPrice: ${storeListings.value[index].price.toLocaleString()} gold`
+    })
+  })
+}
+
+onMounted(refreshHoverTitles)
+onUpdated(refreshHoverTitles)
 </script>
 
 <template>
@@ -56,7 +84,7 @@ const {
     </TransitionGroup>
   </Teleport>
 
-  <section v-if="playerName" class="leaderboard">
+  <section v-if="playerName && page === 'high scores'" class="leaderboard leaderboard-page">
     <h2>High Scores</h2>
 
     <div class="leaderboard-tabs">
@@ -78,6 +106,15 @@ const {
 
       <button :class="{ selected: leaderboardCategory === 'kills' }" @click="loadLeaderboard('kills')">
         Kills
+      </button>
+      <button :class="{ selected: leaderboardCategory === 'gathered' }" @click="loadLeaderboard('gathered')">
+        Gathered
+      </button>
+      <button :class="{ selected: leaderboardCategory === 'crafted' }" @click="loadLeaderboard('crafted')">
+        Crafted
+      </button>
+      <button :class="{ selected: leaderboardCategory === 'clicks' }" @click="loadLeaderboard('clicks')">
+        Actions
       </button>
     </div>
 
