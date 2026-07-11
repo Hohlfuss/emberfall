@@ -25,6 +25,8 @@ type ServerState = {
   enemy: { name: string; archetype: string; health: number; maxHealth: number; attack: number; defense: number; attackSpeed: number; xp: number; gold: number }
   battleStarted: boolean; recovering: boolean; enemyLoading: boolean; recoveryRemaining: number; enemyLoadRemaining: number
   professions: Record<Skill, { level: number; xp: number; xpNeeded: number }>
+  craftingProfession: { level: number; xp: number; xpNeeded: number }
+  recipeLevels: Record<string, number>
   professionStats: Record<Skill, ProfessionStats>
   effectiveDurations: Record<string, number>
   resourceMastery: Record<string, number>
@@ -148,6 +150,7 @@ export function useGame() {
   const ownedGear = computed(() => state.value?.ownedGear || [])
   const shopUpgrades = computed(() => state.value?.shopUpgrades || { medic: 0, scouting: 0, training: 0, fortitude: 0 })
   const achievements = computed(() => state.value?.achievements || [])
+  const craftingProfession = computed(() => state.value?.craftingProfession || { level: 1, xp: 0, xpNeeded: 35 })
   const craftingId = computed(() => state.value?.crafting?.id || '')
 
   function professionStats(skill: Skill) { return state.value?.professionStats[skill] || emptyProfessionStats }
@@ -161,7 +164,7 @@ export function useGame() {
     return matchesFilter && (!recipe.outputGear || Boolean(state.value?.nextGearIds.includes(recipe.outputGear)))
   }))
   function canCraft(recipe: Recipe) {
-    return (!recipe.outputGear || !ownedGear.value.includes(recipe.outputGear)) && Object.entries(recipe.costs).every(([item, cost]) => (inventory.value[item] || 0) >= cost)
+    return craftingProfession.value.level >= (state.value?.recipeLevels[recipe.id] || 1) && (!recipe.outputGear || !ownedGear.value.includes(recipe.outputGear)) && Object.entries(recipe.costs).every(([item, cost]) => (inventory.value[item] || 0) >= cost)
   }
 
   const storeListings = computed(() => storePaths.value.map(path => {
@@ -225,6 +228,7 @@ export function useGame() {
       recipe.name,
       recipe.description,
       `Craft time: ${recipe.duration}s`,
+      `Requires crafting level ${state.value?.recipeLevels[recipe.id] || 1}`,
       `Materials: ${costs}`,
       output ? gearTooltip(output) : `Creates ${recipe.outputQty || 1} × ${recipe.outputItem}`,
     ].join('\n')
@@ -395,6 +399,7 @@ export function useGame() {
       })
       const result = await readJson<{ token: string; state: ServerState }>(response)
       authToken.value = result.token
+      result.state.events.forEach(event => seenEventIds.add(event.id))
       applyServerState(result.state)
       startPolling()
       void loadChat()
@@ -459,7 +464,7 @@ export function useGame() {
     enemyTier, highestEnemyTier, enemy, battleStarted, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
     heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
     woods, rocks, allResources, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, resourceMastery,
-    workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, shopUpgrades, achievements, craftingId,
+    workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, shopUpgrades, achievements, craftingId, craftingProfession,
     craftFilter, filteredRecipes, storeListings, materialGroups, toasts,
     leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
     chatMessages, chatOnline, chatError,

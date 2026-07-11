@@ -113,6 +113,8 @@ export const gearCatalog: Record<string, Gear> = {
   obsidianHelm: { id: 'obsidianHelm', name: 'Obsidian War Helm', slot: 'helmet', tier: 7, icon: '🪖', description: 'Dark glass reinforced with iron bands.', bonuses: { defense: 10, maxHealth: 25 } },
   obsidianChest: { id: 'obsidianChest', name: 'Obsidian Bulwark', slot: 'chest', tier: 7, icon: '🥋', description: 'Armor built for the upper monster tiers.', bonuses: { defense: 16, maxHealth: 50, recoverySpeed: 500 } },
   goldGreaves: { id: 'goldGreaves', name: 'Sunforged Greaves', slot: 'legs', tier: 8, icon: '🦿', description: 'Enchanted gold moves without weight.', bonuses: { defense: 9, maxHealth: 30, encounterSpeed: 250 } },
+  forgeGloves: { id: 'forgeGloves', name: 'Runebound Forge Gloves', slot: 'gloves', tier: 5, icon: '🧤', description: 'Layered bindings improve every practiced strike.', bonuses: { woodYield: 2, miningYield: 2, woodCrit: 5, miningCrit: 5, critPower: .25 } },
+  masterBoots: { id: 'masterBoots', name: 'Obsidian Pathfinder Boots', slot: 'boots', tier: 7, icon: '🥾', description: 'Masterwork boots built for dangerous ground.', bonuses: { attackSpeed: 180, woodSpeed: 10, miningSpeed: 10, defense: 4 } },
 }
 
 export const recipes: Recipe[] = [
@@ -155,6 +157,10 @@ export const recipes: Recipe[] = [
   { id: 'obsidianHelmRecipe', name: 'Obsidian War Helm', category: 'combat', description: 'Upper-tier defensive equipment.', duration: 120, costs: { 'Obsidian Plate': 4, 'Silver Ingot': 2 }, outputGear: 'obsidianHelm', progress: 0 },
   { id: 'obsidianChestRecipe', name: 'Obsidian Bulwark', category: 'combat', description: 'Massive health and defense with recovery speed.', duration: 165, costs: { 'Obsidian Plate': 7, 'Ironwood Log': 8 }, outputGear: 'obsidianChest', progress: 0 },
   { id: 'goldGreavesRecipe', name: 'Sunforged Greaves', category: 'combat', description: 'Defense that also shortens encounter preparation.', duration: 145, costs: { 'Gold Ingot': 6, 'Elder Log': 5 }, outputGear: 'goldGreaves', progress: 0 },
+  { id: 'reinforcedBeam', name: 'Reinforced Oak Beam', category: 'components', description: 'A layered structural component for masterwork equipment.', duration: 52, costs: { 'Oak Plank': 3, 'Iron Ingot': 2, 'Resin Binding': 1 }, outputItem: 'Reinforced Beam', outputQty: 1, progress: 0 },
+  { id: 'runedPlate', name: 'Runed Obsidian Plate', category: 'components', description: 'An obsidian plate engraved around a focused crystal.', duration: 95, costs: { 'Obsidian Plate': 2, 'Crystal Lens': 1, 'Gold Ingot': 1 }, outputItem: 'Runed Plate', outputQty: 1, progress: 0 },
+  { id: 'forgeGlovesRecipe', name: 'Runebound Forge Gloves', category: 'accessories', description: 'A multi-stage masterwork that improves both gathering skills.', duration: 115, costs: { 'Resin Binding': 4, 'Reinforced Beam': 2, 'Silver Ingot': 3 }, outputGear: 'forgeGloves', progress: 0 },
+  { id: 'masterBootsRecipe', name: 'Obsidian Pathfinder Boots', category: 'combat', description: 'Advanced boots combining runed plate and flexible bindings.', duration: 155, costs: { 'Runed Plate': 3, 'Resin Binding': 4, 'Yew Log': 5 }, outputGear: 'masterBoots', progress: 0 },
 ]
 
 export const slotLabels: Record<GearSlot, string> = {

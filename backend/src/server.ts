@@ -80,6 +80,7 @@ type Game = {
   ownedGear: string[]
   equipment: Record<GearSlot, string | undefined>
   professions: Record<Skill, Profession>
+  craftingProfession: Profession
   resourceMastery: Record<string, number>
   jobs: Partial<Record<Skill, GatherJob>>
   workerAssignments: Record<string, number>
@@ -136,8 +137,8 @@ const storePaths = [
   { id: 'helmets', name: 'Helmets', icon: '🪖', items: ['copperHelm', 'ironHelm', 'obsidianHelm'], prices: [275, 2600, 20000] },
   { id: 'chestArmor', name: 'Chest armor', icon: '🥋', items: ['copperChest', 'ironChest', 'obsidianChest'], prices: [400, 3600, 28000] },
   { id: 'legArmor', name: 'Leg armor', icon: '🦿', items: ['ironLegs', 'goldGreaves'], prices: [3200, 22000] },
-  { id: 'boots', name: 'Boots', icon: '🥾', items: ['trailBoots'], prices: [900] },
-  { id: 'gloves', name: 'Gloves', icon: '🧤', items: ['loggerGloves'], prices: [2800] },
+  { id: 'boots', name: 'Boots', icon: '🥾', items: ['trailBoots', 'masterBoots'], prices: [900, 14500] },
+  { id: 'gloves', name: 'Gloves', icon: '🧤', items: ['loggerGloves', 'forgeGloves'], prices: [2800, 10500] },
   { id: 'rings', name: 'Rings', icon: '💍', items: ['scoutToken', 'silverRing'], prices: [1000, 12000] },
   { id: 'amulets', name: 'Amulets', icon: '📿', items: ['campCharm', 'moonAmulet'], prices: [750, 30000] },
 ]
@@ -220,6 +221,8 @@ function deserializeGame(value: unknown): Game {
       ...(stored.lifetime ?? {}),
     },
 
+    craftingProfession: stored.craftingProfession ?? { level: 1, xp: 0 },
+
     unlockedAchievements: new Set(
       stored.unlockedAchievements ?? [],
     ),
@@ -282,6 +285,11 @@ async function saveGame(
 
 function xpNeeded(game: Game) { return 100 + (game.level - 1) * 60 }
 function professionXpNeeded(game: Game, skill: Skill) { return Math.round(15 * game.professions[skill].level ** 1.5) }
+function craftingXpNeeded(game: Game) { return Math.round(35 * game.craftingProfession.level ** 1.45) }
+function recipeLevel(recipe: Recipe) {
+  if (recipe.outputGear) return Math.max(1, gearCatalog[recipe.outputGear]?.tier || 1)
+  return Math.max(1, ...Object.keys(recipe.costs).map(item => allResources.find(resource => resource.item === item)?.tier || 1))
+}
 
 function totalBonuses(game: Game): Bonuses {
   const result: Record<string, number> = {}
@@ -453,6 +461,12 @@ function completeCraft(game: Game) {
   if (!recipe) return
   if (recipe.outputItem) game.inventory[recipe.outputItem] = (game.inventory[recipe.outputItem] || 0) + (recipe.outputQty || 1)
   if (recipe.outputGear && !game.ownedGear.includes(recipe.outputGear)) game.ownedGear.push(recipe.outputGear)
+  game.craftingProfession.xp += 8 + recipeLevel(recipe) * 6
+  while (game.craftingProfession.xp >= craftingXpNeeded(game) && game.craftingProfession.level < 25) {
+    game.craftingProfession.xp -= craftingXpNeeded(game)
+    game.craftingProfession.level++
+    game.message = `Crafting reached level ${game.craftingProfession.level}! New recipes are now available.`
+  }
   game.lifetime.crafted++
   game.message = `${recipe.name} completed and added to your inventory.`
   checkAchievements(game)
@@ -573,7 +587,7 @@ function createGame(name: string): Game {
     player: { health: 100, baseMaxHealth: 100, baseAttack: 10, baseDefense: 3, baseAttackSpeed: 1800, baseRecoveryTime: 10000, baseEnemyLoadTime: 2000, basePassiveRegen: .2, regenBuffer: 0 },
     inventory: {}, ownedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe'],
     equipment: { weapon: 'rustySword', helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: 'crackedPickaxe', hatchet: 'wornHatchet' },
-    professions: { woodcutting: { level: 1, xp: 0 }, mining: { level: 1, xp: 0 } }, resourceMastery: {}, jobs: {},
+    professions: { woodcutting: { level: 1, xp: 0 }, mining: { level: 1, xp: 0 } }, craftingProfession: { level: 1, xp: 0 }, resourceMastery: {}, jobs: {},
     workerAssignments: {}, workerProgress: {}, workers: 0, shopUpgrades: { medic: 0, scouting: 0, training: 0, fortitude: 0 },
     unlockedAchievements: new Set(),
     lifetime: createLifetimeStats(),
@@ -635,6 +649,7 @@ function performAction(game: Game, action: Action, now: number) {
     case 'craft': {
       const recipe = recipeData.find(candidate => candidate.id === action.recipeId)
       if (!recipe) reject('Unknown recipe.')
+      if (game.craftingProfession.level < recipeLevel(recipe)) reject(`Requires crafting level ${recipeLevel(recipe)}.`)
       if (game.crafting) reject('Another recipe is already being crafted.')
       if (recipe.outputGear && !nextGearIds(game).includes(recipe.outputGear)) reject('That is not the next equipment tier.')
       if (recipe.outputGear && game.ownedGear.includes(recipe.outputGear)) reject('That equipment is already owned.')
@@ -742,6 +757,8 @@ function publicState(game: Game, now = Date.now()) {
       woodcutting: { ...game.professions.woodcutting, xpNeeded: professionXpNeeded(game, 'woodcutting') },
       mining: { ...game.professions.mining, xpNeeded: professionXpNeeded(game, 'mining') },
     },
+    craftingProfession: { ...game.craftingProfession, xpNeeded: craftingXpNeeded(game) },
+    recipeLevels: Object.fromEntries(recipeData.map(recipe => [recipe.id, recipeLevel(recipe)])),
     professionStats: { woodcutting: professionStats(game, 'woodcutting'), mining: professionStats(game, 'mining') },
     effectiveDurations: Object.fromEntries(allResources.map(resource => [resource.id, effectiveDuration(game, resource)])),
     resourceMastery: game.resourceMastery, jobs, inventory: game.inventory,
