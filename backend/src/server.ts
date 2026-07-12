@@ -1,6 +1,7 @@
 import { config as loadEnv } from 'dotenv'
 import express from 'express'
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { OAuth2Client } from 'google-auth-library'
 
@@ -1930,10 +1931,18 @@ app.get(
 )
 
 const frontendDist = fileURLToPath(new URL('../../frontend/dist', import.meta.url))
-app.use(express.static(frontendDist))
-app.get(/^(?!\/api(?:\/|$)).*/, (_request, response) => {
-  response.sendFile('index.html', { root: frontendDist })
-})
+const hasFrontendDist = existsSync(frontendDist)
+
+if (hasFrontendDist) {
+  app.use(express.static(frontendDist))
+  app.get(/^(?!\/api(?:\/|$)).*/, (_request, response) => {
+    response.sendFile('index.html', { root: frontendDist })
+  })
+} else {
+  app.get(/^(?!\/api(?:\/|$)).*/, (_request, response) => {
+    response.status(404).json({ error: 'Frontend build is not available yet. The API is still running.' })
+  })
+}
 
 const tick = setInterval(() => {
   const now = Date.now()
