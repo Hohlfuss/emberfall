@@ -3,7 +3,7 @@ import type { Gear, GearSlot, Page, ProfessionStats, Recipe, Resource, Skill } f
 
 type ShopUpgradeId = 'medic' | 'scouting' | 'training' | 'fortitude' | 'autoBattle'
 type GameEvent = { id: number; kind: 'achievement' | 'critical' | 'level' | 'rare' | 'yield' | 'worker'; title: string; detail: string }
-type Achievement = { id: string; name: string; description: string; goal: number; reward: number; icon: string; progress: number; unlocked: boolean }
+type Achievement = { id: string; name: string; description: string; goal: number; reward: number; icon: string; progress: number; unlocked: boolean; titleReward?: string; equipped: boolean }
 type StorePath = { id: string; name: string; icon: string; items: string[]; prices: number[] }
 type ShopUpgradeDetail = { id: ShopUpgradeId; name: string; description: string; icon: string; baseCost: number; max: number }
 type ServerProfessionStats = Omit<ProfessionStats, 'bonusYieldPercent'> & { bonusYieldPercent?: number; yield?: number }
@@ -21,7 +21,7 @@ type GameConfig = {
   factionDefinitions: FactionDefinition[]
 }
 type ServerState = {
-  id: string; revision: number; serverNow: number; playerName: string; gold: number; level: number; xp: number; xpNeeded: number; message: string
+  id: string; revision: number; serverNow: number; playerName: string; playerTitle: string; gold: number; level: number; xp: number; xpNeeded: number; message: string
   player: { health: number }
   combatStats: { maxHealth: number; attack: number; defense: number; attackSpeed: number; recoveryTime: number; enemyLoadTime: number; passiveRegen: number }
   enemyTier: number; highestEnemyTier: number
@@ -129,6 +129,7 @@ export function useGame() {
   const emptyEquipment = { weapon: undefined, helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: undefined, hatchet: undefined } satisfies Record<GearSlot, string | undefined>
 
   const playerName = computed(() => state.value?.playerName || '')
+  const playerTitle = computed(() => state.value?.playerTitle || 'Aspiring Adventurer')
   const gold = computed(() => state.value?.gold || 0)
   const level = computed(() => state.value?.level || 1)
   const xp = computed(() => state.value?.xp || 0)
@@ -536,6 +537,7 @@ export function useGame() {
   function revealDetectorTile(tileId: number) { void sendAction({ type: 'revealDetectorTile', tileId }) }
   function startDetectorDrill(gold: number) { void sendAction({ type: 'startDetectorDrill', gold }) }
   function newDetectorSite() { void sendAction({ type: 'newDetectorSite' }) }
+  function equipAchievementTitle(achievementId: string | null) { void sendAction({ type: 'equipTitle', achievementId }) }
 
   onMounted(() => {
     void connectBackend()
@@ -550,7 +552,7 @@ export function useGame() {
   })
 
   return {
-    tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authLoading, serverOnline, backendError, playerName, gold, level, xp, xpNeeded, message, player, combatStats, dps,
+    tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authLoading, serverOnline, backendError, playerName, playerTitle, gold, level, xp, xpNeeded, message, player, combatStats, dps,
     enemyTier, highestEnemyTier, enemy, battleStarted, autoBattle, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
     heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
     woods, rocks, allResources, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, sellPrices, resourceMastery,
@@ -560,6 +562,6 @@ export function useGame() {
     chatMessages, chatOnline, chatError,
     auctionListings, auctionError, offlineProgress,
     professionStats, professionXpNeeded, isUnlocked, effectiveDuration, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip,
-    submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
+    submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
   }
 }

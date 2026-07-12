@@ -66,7 +66,7 @@ type ShopUpgrade = 'medic' | 'scouting' | 'training' | 'fortitude' | 'autoBattle
 type EventKind = 'achievement' | 'critical' | 'level' | 'rare' | 'yield' | 'worker'
 type GameEvent = { id: number; kind: EventKind; title: string; detail: string }
 type AchievementKind = 'level' | 'kills' | 'deaths' | 'tier' | 'gathered' | 'crafted' | 'workers' | 'woodLevel' | 'mineLevel' | 'gear' | 'actions' | 'goldEarned' | 'goldSpent'
-type AchievementDefinition = { id: string; name: string; description: string; kind: AchievementKind; goal: number; reward: number; icon: string }
+type AchievementDefinition = { id: string; name: string; description: string; kind: AchievementKind; goal: number; reward: number; icon: string; titleReward?: string }
 type GatherJob = { resourceId: string; startedAt: number; endsAt: number; critical: boolean; duration: number }
 type CraftJob = { recipeId: string; startedAt: number; endsAt: number; duration: number; receipt?: string }
 type TimedState = { startedAt: number; endsAt: number }
@@ -105,6 +105,7 @@ type Game = {
   levelRewardWorkers: number
   shopUpgrades: Record<ShopUpgrade, number>
   unlockedAchievements: Set<string>
+  titleAchievementId: string | null
   enemyTier: number
   highestEnemyTier: number
   enemy: Enemy
@@ -161,6 +162,7 @@ type Action =
   | { type: 'revealDetectorTile'; tileId: number }
   | { type: 'startDetectorDrill'; gold: number }
   | { type: 'newDetectorSite' }
+  | { type: 'equipTitle'; achievementId: string | null }
 
 const factionDefinitions = [
   { id: 'wardens', name: 'Verdant Wardens', icon: '🌿', unlockLevel: 3, description: 'Protectors of ancient forests. Reputation comes from woodcutting.', ranks: [50, 175, 450, 900], rewards: ['+5% woodcutting speed', '+20% woodcutting bonus yield', '+5% woodcutting crit chance', '+15% woodcutting speed'] },
@@ -216,20 +218,42 @@ const achievementDefinitions: AchievementDefinition[] = [
   { id: 'mineFive', name: 'Deep Delver', description: 'Reach mining level 5.', kind: 'mineLevel', goal: 5, reward: 100, icon: '💎' },
   { id: 'gearFive', name: 'Well Equipped', description: 'Own 5 crafted or starter items.', kind: 'gear', goal: 5, reward: 100, icon: '🛡️' },
   { id: 'levelTen', name: 'Veteran Adventurer', description: 'Reach player level 10.', kind: 'level', goal: 10, reward: 400, icon: '🏅' },
-  { id: 'levelTwentyFive', name: 'Living Legend', description: 'Reach player level 25.', kind: 'level', goal: 25, reward: 1500, icon: '👑' },
+  { id: 'levelFifteen', name: 'Battle-Hardened', description: 'Reach player level 15.', kind: 'level', goal: 15, reward: 700, icon: '🗡️' },
+  { id: 'levelTwentyFive', name: 'Living Legend', description: 'Reach player level 25.', kind: 'level', goal: 25, reward: 1500, icon: '👑', titleReward: 'Living Legend' },
+  { id: 'levelForty', name: 'Beyond Mortal Measure', description: 'Reach player level 40.', kind: 'level', goal: 40, reward: 5000, icon: '✨', titleReward: 'The Ascendant' },
+  { id: 'killsFifty', name: 'Seasoned Slayer', description: 'Defeat 50 monsters.', kind: 'kills', goal: 50, reward: 350, icon: '🗡️' },
   { id: 'killsHundred', name: 'Arena Centurion', description: 'Defeat 100 monsters.', kind: 'kills', goal: 100, reward: 750, icon: '🩸' },
-  { id: 'killsThousand', name: 'Bane of Monsters', description: 'Defeat 1,000 monsters.', kind: 'kills', goal: 1000, reward: 5000, icon: '🐉' },
-  { id: 'tierTwenty', name: 'Beyond the Veil', description: 'Unlock enemy tier 20.', kind: 'tier', goal: 20, reward: 2000, icon: '🌀' },
-  { id: 'gatherTenThousand', name: 'Nature Bends', description: 'Gather 10,000 materials.', kind: 'gathered', goal: 10000, reward: 3500, icon: '🌍' },
+  { id: 'killsFiveHundred', name: 'Dread Hunter', description: 'Defeat 500 monsters.', kind: 'kills', goal: 500, reward: 2200, icon: '🦴' },
+  { id: 'killsThousand', name: 'Bane of Monsters', description: 'Defeat 1,000 monsters.', kind: 'kills', goal: 1000, reward: 5000, icon: '🐉', titleReward: 'Bane of Monsters' },
+  { id: 'killsFiveThousand', name: 'The Last Predator', description: 'Defeat 5,000 monsters.', kind: 'kills', goal: 5000, reward: 15000, icon: '☠️', titleReward: "Realm's Bane" },
+  { id: 'tierFifteen', name: 'Abyss-Touched', description: 'Unlock enemy tier 15.', kind: 'tier', goal: 15, reward: 1000, icon: '🌘' },
+  { id: 'tierTwenty', name: 'Beyond the Veil', description: 'Unlock enemy tier 20.', kind: 'tier', goal: 20, reward: 2000, icon: '🌀', titleReward: 'Veilwalker' },
+  { id: 'tierTwentyFive', name: 'End of the Descent', description: 'Unlock enemy tier 25.', kind: 'tier', goal: 25, reward: 6000, icon: '🕳️', titleReward: 'Abysswalker' },
+  { id: 'gatherFiveThousand', name: 'Landshaper', description: 'Gather 5,000 materials.', kind: 'gathered', goal: 5000, reward: 1700, icon: '🪨' },
+  { id: 'gatherTenThousand', name: 'Nature Bends', description: 'Gather 10,000 materials.', kind: 'gathered', goal: 10000, reward: 3500, icon: '🌍', titleReward: 'World Harvester' },
+  { id: 'gatherFiftyThousand', name: 'Endless Harvest', description: 'Gather 50,000 materials.', kind: 'gathered', goal: 50000, reward: 12000, icon: '🌐', titleReward: 'Nature Unbound' },
   { id: 'craftFifty', name: 'Master Artisan', description: 'Complete 50 recipes.', kind: 'crafted', goal: 50, reward: 900, icon: '⚒️' },
-  { id: 'craftFiveHundred', name: 'Forge Eternal', description: 'Complete 500 recipes.', kind: 'crafted', goal: 500, reward: 6000, icon: '🌋' },
-  { id: 'tenWorkers', name: 'Industrial Power', description: 'Own 10 workers.', kind: 'workers', goal: 10, reward: 1800, icon: '🏭' },
+  { id: 'craftHundred', name: 'Emberwright', description: 'Complete 100 recipes.', kind: 'crafted', goal: 100, reward: 1800, icon: '🛠️' },
+  { id: 'craftFiveHundred', name: 'Forge Eternal', description: 'Complete 500 recipes.', kind: 'crafted', goal: 500, reward: 6000, icon: '🌋', titleReward: 'Master of the Forge' },
+  { id: 'sixWorkers', name: 'Growing Company', description: 'Own 6 workers.', kind: 'workers', goal: 6, reward: 700, icon: '👷' },
+  { id: 'tenWorkers', name: 'Industrial Power', description: 'Own 10 workers.', kind: 'workers', goal: 10, reward: 1800, icon: '🏭', titleReward: 'Guildmaster' },
+  { id: 'twentyWorkers', name: 'A Realm at Work', description: 'Own 20 workers.', kind: 'workers', goal: 20, reward: 6500, icon: '🏙️', titleReward: 'Lord of Industry' },
   { id: 'actionsThousand', name: 'Restless Hands', description: 'Perform 1,000 game actions.', kind: 'actions', goal: 1000, reward: 700, icon: '🖱️' },
-  { id: 'actionsTenThousand', name: 'Unstoppable', description: 'Perform 10,000 game actions.', kind: 'actions', goal: 10000, reward: 4500, icon: '⚡' },
+  { id: 'actionsTenThousand', name: 'Unstoppable', description: 'Perform 10,000 game actions.', kind: 'actions', goal: 10000, reward: 4500, icon: '⚡', titleReward: 'The Unstoppable' },
+  { id: 'actionsFiftyThousand', name: 'No Rest Remains', description: 'Perform 50,000 game actions.', kind: 'actions', goal: 50000, reward: 14000, icon: '🌩️', titleReward: 'The Tireless' },
   { id: 'earnTenThousand', name: 'Golden Ambition', description: 'Earn 10,000 total gold.', kind: 'goldEarned', goal: 10000, reward: 1000, icon: '💰' },
+  { id: 'earnHundredThousand', name: 'Treasury Without End', description: 'Earn 100,000 total gold.', kind: 'goldEarned', goal: 100000, reward: 8000, icon: '🤑', titleReward: 'Golden Sovereign' },
   { id: 'spendTenThousand', name: 'Patron of Emberfall', description: 'Spend 10,000 total gold.', kind: 'goldSpent', goal: 10000, reward: 800, icon: '🏛️' },
-  { id: 'woodTwenty', name: 'Warden of Timber', description: 'Reach woodcutting level 20.', kind: 'woodLevel', goal: 20, reward: 1200, icon: '🌳' },
-  { id: 'mineTwenty', name: 'Heart of the Mountain', description: 'Reach mining level 20.', kind: 'mineLevel', goal: 20, reward: 1200, icon: '🏔️' },
+  { id: 'spendFiftyThousand', name: 'Pillar of the Realm', description: 'Spend 50,000 total gold.', kind: 'goldSpent', goal: 50000, reward: 3500, icon: '🏰', titleReward: 'Great Patron' },
+  { id: 'woodTen', name: 'Timber Savant', description: 'Reach woodcutting level 10.', kind: 'woodLevel', goal: 10, reward: 400, icon: '🪓' },
+  { id: 'woodTwenty', name: 'Warden of Timber', description: 'Reach woodcutting level 20.', kind: 'woodLevel', goal: 20, reward: 1200, icon: '🌳', titleReward: 'Warden of Timber' },
+  { id: 'woodFifty', name: 'The Ancient Grove', description: 'Reach woodcutting level 50.', kind: 'woodLevel', goal: 50, reward: 8000, icon: '🌲', titleReward: 'Voice of the Forest' },
+  { id: 'mineTen', name: 'Stone Savant', description: 'Reach mining level 10.', kind: 'mineLevel', goal: 10, reward: 400, icon: '⛏️' },
+  { id: 'mineTwenty', name: 'Heart of the Mountain', description: 'Reach mining level 20.', kind: 'mineLevel', goal: 20, reward: 1200, icon: '🏔️', titleReward: 'Mountainheart' },
+  { id: 'mineFifty', name: 'Below the Roots', description: 'Reach mining level 50.', kind: 'mineLevel', goal: 50, reward: 8000, icon: '💠', titleReward: 'Deep-Soul' },
+  { id: 'gearTen', name: 'Walking Arsenal', description: 'Own 10 pieces of equipment.', kind: 'gear', goal: 10, reward: 900, icon: '🛡️' },
+  { id: 'gearFifteen', name: 'Relic Keeper', description: 'Own 15 pieces of equipment.', kind: 'gear', goal: 15, reward: 2500, icon: '⚜️', titleReward: 'Keeper of Relics' },
+  { id: 'deathsTwentyFive', name: 'Still Standing', description: 'Survive 25 defeats.', kind: 'deaths', goal: 25, reward: 1000, icon: '🩹', titleReward: 'The Undying' },
 ]
 
 const enemyArchetypes = [
@@ -325,6 +349,10 @@ function deserializeGame(value: unknown): Game {
   const expectedLevelRewards = levelWorkerRewardCount(stored.level ?? 1)
   const recordedLevelRewards = stored.levelRewardWorkers ?? legacyLevelWorkerRewardCount(stored.level ?? 1)
   const missingLevelRewards = Math.max(0, expectedLevelRewards - recordedLevelRewards)
+  const storedAchievementIds = stored.unlockedAchievements ?? []
+  const validStoredTitle = achievementDefinitions.some(achievement =>
+    achievement.id === stored.titleAchievementId && achievement.titleReward && storedAchievementIds.includes(achievement.id),
+  )
 
   return {
     ...stored,
@@ -348,6 +376,7 @@ function deserializeGame(value: unknown): Game {
     factions: stored.factions ?? { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } },
     daily: stored.daily ?? createDailyState(stored.lifetime ?? createLifetimeStats()),
     metalDetector: normalizeMetalDetector(stored.metalDetector, storedAt, (stored.highestEnemyTier ?? 1) >= 4),
+    titleAchievementId: validStoredTitle ? stored.titleAchievementId : null,
     workers: Math.max(stored.workers ?? 0, recordedLevelRewards) + missingLevelRewards,
     levelRewardWorkers: expectedLevelRewards,
     player: {
@@ -363,9 +392,7 @@ function deserializeGame(value: unknown): Game {
     },
 
     progressSnapshot: stored.progressSnapshot ?? progressSnapshot(stored as unknown as Game, stored.lastAdvancedAt ?? Date.now()),
-    unlockedAchievements: new Set(
-      stored.unlockedAchievements ?? [],
-    ),
+    unlockedAchievements: new Set(storedAchievementIds),
   }
 }
 
@@ -618,7 +645,8 @@ function checkAchievements(game: Game) {
       const reward = Math.max(10, Math.round(achievement.reward * .35))
       giveGold(game, reward)
       game.message = `Achievement unlocked: ${achievement.name}! +${reward} gold.`
-      pushEvent(game, 'achievement', achievement.name, `Achievement unlocked · +${reward} gold`)
+      if (achievement.titleReward && !game.titleAchievementId) game.titleAchievementId = achievement.id
+      pushEvent(game, 'achievement', achievement.name, `Achievement unlocked · +${reward} gold${achievement.titleReward ? ` · Title: ${achievement.titleReward}` : ''}`)
     }
   })
 }
@@ -939,7 +967,7 @@ function createGame(name: string): Game {
     equipment: { weapon: 'rustySword', helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: 'crackedPickaxe', hatchet: 'wornHatchet' },
     professions: { woodcutting: { level: 1, xp: 0 }, mining: { level: 1, xp: 0 } }, craftingProfession: { level: 1, xp: 0 }, resourceMastery: {}, jobs: {},
     workerAssignments: {}, workerProgress: {}, workers: 0, levelRewardWorkers: 0, shopUpgrades: { medic: 0, scouting: 0, training: 0, fortitude: 0, autoBattle: 0 },
-    unlockedAchievements: new Set(), alliedFaction: null, factions: { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } }, daily: createDailyState(createLifetimeStats()), metalDetector: createMetalDetector(now),
+    unlockedAchievements: new Set(), titleAchievementId: null, alliedFaction: null, factions: { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } }, daily: createDailyState(createLifetimeStats()), metalDetector: createMetalDetector(now),
     lifetime: createLifetimeStats(),
     enemyTier: 1, highestEnemyTier: 1, enemy: { name: 'Loading...', archetype: '', health: 0, maxHealth: 1, attack: 0, defense: 0, attackSpeed: 0, xp: 0, gold: 0 },
     battleActive: false, autoBattle: false, nextPlayerAttackAt: 0, nextEnemyAttackAt: 0, recovery: null, enemyLoad: null, crafting: null,
@@ -1165,11 +1193,24 @@ function performAction(game: Game, action: Action, now: number) {
       game.metalDetector.site++
       game.message = `Detector site ${game.metalDetector.site} is ready to scan.`
       break
+    case 'equipTitle': {
+      if (action.achievementId === null) {
+        game.titleAchievementId = null
+        game.message = 'Your adventurer title has been restored.'
+        break
+      }
+      const achievement = achievementDefinitions.find(candidate => candidate.id === action.achievementId && candidate.titleReward)
+      if (!achievement || !game.unlockedAchievements.has(achievement.id)) reject('That title has not been unlocked.')
+      game.titleAchievementId = achievement.id
+      game.message = `Title equipped: ${achievement.titleReward}.`
+      break
+    }
     default:
       reject('Unknown action.')
   }
 
   game.lifetime.totalClicks++
+  checkAchievements(game)
   game.revision++
 }
 
@@ -1189,6 +1230,7 @@ function equip(game: Game, gearId: string, now: number) {
 function publicState(game: Game, now = Date.now()) {
   advanceGame(game, now)
   const stats = combatStats(game)
+  const equippedTitle = achievementDefinitions.find(achievement => achievement.id === game.titleAchievementId)?.titleReward
   const assignedWorkers = Object.values(game.workerAssignments).reduce((sum, count) => sum + count, 0)
   const jobs = Object.fromEntries(Object.entries(game.jobs).map(([skill, job]) => [skill, job ? {
     id: job.resourceId, critical: job.critical, duration: job.duration,
@@ -1209,7 +1251,7 @@ function publicState(game: Game, now = Date.now()) {
     ? 0
     : Math.max(0, DETECTOR_RECHARGE_MS - (now - game.metalDetector.chargeUpdatedAt))
   return {
-    id: game.id, revision: game.revision, serverNow: now, playerName: game.name, gold: game.gold, level: game.level, xp: game.xp, xpNeeded: xpNeeded(game), message: game.message,
+    id: game.id, revision: game.revision, serverNow: now, playerName: game.name, playerTitle: equippedTitle || 'Aspiring Adventurer', gold: game.gold, level: game.level, xp: game.xp, xpNeeded: xpNeeded(game), message: game.message,
     player: { health: game.player.health }, combatStats: stats,
     enemyTier: game.enemyTier, highestEnemyTier: game.highestEnemyTier, enemy: game.enemy,
     battleStarted: game.battleActive, autoBattle: game.autoBattle, recovering: Boolean(game.recovery), enemyLoading: Boolean(game.enemyLoad),
@@ -1249,7 +1291,7 @@ function publicState(game: Game, now = Date.now()) {
       jackpotChance: (1 - detectorEmptyChance(game.metalDetector.depth)) * detectorJackpotChance(game.metalDetector.depth) * 100,
       drilling: detectorDrilling,
     },
-    achievements: achievementDefinitions.map(achievement => ({ ...achievement, reward: Math.max(10, Math.round(achievement.reward * .35)), progress: achievementProgress(game, achievement), unlocked: game.unlockedAchievements.has(achievement.id) })),
+    achievements: achievementDefinitions.map(achievement => ({ ...achievement, reward: Math.max(10, Math.round(achievement.reward * .35)), progress: achievementProgress(game, achievement), unlocked: game.unlockedAchievements.has(achievement.id), equipped: game.titleAchievementId === achievement.id })),
     events: game.events,
   }
 }
