@@ -104,7 +104,7 @@ watch(playerName, name => {
             </article>
           </div>
         </div>
-        <article class="shop-card worker-shop"><div class="worker-art">♟</div><div><span class="tier">PERMANENT WORKER</span><h2>Hire a Gatherer</h2><p>Assign to any unlocked material. Free workers are awarded at levels 2, 5, 10, 15, and every 5 levels after.</p><small>Owned: {{ workers }} · Flat price—never increases</small></div><button class="primary" @click="buyWorker" :disabled="gold < workerPrice">HIRE · {{ workerPrice.toLocaleString() }} GOLD</button></article>
+        <article class="shop-card worker-shop"><div class="worker-art">♟</div><div><span class="tier">PERMANENT WORKER</span><h2>Hire a Gatherer</h2><p>Assign to any unlocked material. Free workers are awarded at levels 2, 5, 10, 15, and every 5 levels after.</p><small>Owned: {{ workers }} · Shop price increases by 500 gold per hire</small></div><button class="primary" @click="buyWorker" :disabled="gold < workerPrice">HIRE · {{ workerPrice.toLocaleString() }} GOLD</button></article>
         <article v-for="upgrade in shopUpgradeDetails" :key="upgrade.id" class="service-card"><b>{{ upgrade.icon }}</b><div><span class="tier">RANK {{ shopUpgrades[upgrade.id] }} / {{ upgrade.max }}</span><h3>{{ upgrade.name }}</h3><p>{{ upgrade.description }}</p></div><button @click="buyShopUpgrade(upgrade)" :disabled="shopUpgrades[upgrade.id] >= upgrade.max || gold < shopUpgradeCost(upgrade)">{{ shopUpgrades[upgrade.id] >= upgrade.max ? 'MAXIMUM RANK' : `UPGRADE · ${shopUpgradeCost(upgrade).toLocaleString()} GOLD` }}</button></article>
       </div>
     </section>

@@ -713,7 +713,7 @@ function shopUpgradeCost(game: Game, upgrade: typeof shopUpgradeDetails[number])
   return Math.round(upgrade.baseCost * 1.75 ** game.shopUpgrades[upgrade.id])
 }
 
-function workerPrice(_game: Game) { return 1000 }
+function workerPrice(game: Game) { return 1000 + Math.max(0, game.lifetime.workersBought) * 500 }
 
 function completeGather(game: Game, skill: Skill) {
   const job = game.jobs[skill]
