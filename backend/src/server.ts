@@ -63,7 +63,7 @@ app.use((request, response, next) => {
 type Profession = { level: number; xp: number }
 type Enemy = { name: string; archetype: string; health: number; maxHealth: number; attack: number; defense: number; attackSpeed: number; xp: number; gold: number }
 type ShopUpgrade = 'medic' | 'scouting' | 'training' | 'fortitude' | 'autoBattle'
-type EventKind = 'achievement' | 'critical' | 'level' | 'rare' | 'yield'
+type EventKind = 'achievement' | 'critical' | 'level' | 'rare' | 'yield' | 'worker'
 type GameEvent = { id: number; kind: EventKind; title: string; detail: string }
 type AchievementKind = 'level' | 'kills' | 'deaths' | 'tier' | 'gathered' | 'crafted' | 'workers' | 'woodLevel' | 'mineLevel' | 'gear' | 'actions' | 'goldEarned' | 'goldSpent'
 type AchievementDefinition = { id: string; name: string; description: string; kind: AchievementKind; goal: number; reward: number; icon: string }
@@ -352,7 +352,7 @@ function deserializeGame(value: unknown): Game {
     levelRewardWorkers: expectedLevelRewards,
     player: {
       ...stored.player,
-      baseRecoveryTime: Math.max(30_000, stored.player?.baseRecoveryTime ?? 30_000),
+      baseRecoveryTime: Math.max(60_000, stored.player?.baseRecoveryTime ?? 60_000),
     },
     shopUpgrades: {
       medic: stored.shopUpgrades?.medic ?? 0,
@@ -489,7 +489,7 @@ function combatStats(game: Game) {
     attack: game.player.baseAttack + (bonuses.attack || 0) + game.shopUpgrades.training,
     defense: game.player.baseDefense + (bonuses.defense || 0),
     attackSpeed: Math.max(600, Math.round(game.player.baseAttackSpeed * GAME_PACE_MULTIPLIER - (bonuses.attackSpeed || 0))),
-    recoveryTime: Math.max(3000, Math.round(game.player.baseRecoveryTime * GAME_PACE_MULTIPLIER - (bonuses.recoverySpeed || 0) - game.shopUpgrades.medic * 500)),
+    recoveryTime: Math.max(3000, Math.round(game.player.baseRecoveryTime - (bonuses.recoverySpeed || 0) - game.shopUpgrades.medic * 500)),
     enemyLoadTime: Math.max(500, Math.round(game.player.baseEnemyLoadTime * GAME_PACE_MULTIPLIER - (bonuses.encounterSpeed || 0) - game.shopUpgrades.scouting * 100)),
     passiveRegen: game.player.basePassiveRegen,
   }
@@ -675,6 +675,9 @@ function gainXp(game: Game, amount: number) {
       `Player level ${game.level}!`,
       `+5 max health · +1 attack${gainedDefense ? ' · +1 defense' : ''}${gainedWorker ? ' · +1 gatherer' : ''}`,
     )
+    if (gainedWorker) {
+      pushEvent(game, 'worker', 'New gatherer unlocked!', `You now have ${game.workers} gatherer${game.workers === 1 ? '' : 's'} · assign them on the Workers page`)
+    }
   }
   checkAchievements(game)
 }
@@ -931,7 +934,7 @@ function createGame(name: string): Game {
   const game: Game = {
     id: randomUUID(), revision: 0, lastAdvancedAt: now, name, gold: 0, level: 1, xp: 0,
     message: `Welcome, ${name}. Your adventure begins.`,
-    player: { health: 100, baseMaxHealth: 100, baseAttack: 10, baseDefense: 3, baseAttackSpeed: 1800, baseRecoveryTime: 30000, baseEnemyLoadTime: 2000, basePassiveRegen: .2, regenBuffer: 0 },
+    player: { health: 100, baseMaxHealth: 100, baseAttack: 10, baseDefense: 3, baseAttackSpeed: 1800, baseRecoveryTime: 60000, baseEnemyLoadTime: 2000, basePassiveRegen: .2, regenBuffer: 0 },
     inventory: {}, ownedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe'], unlockedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe'],
     equipment: { weapon: 'rustySword', helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: 'crackedPickaxe', hatchet: 'wornHatchet' },
     professions: { woodcutting: { level: 1, xp: 0 }, mining: { level: 1, xp: 0 } }, craftingProfession: { level: 1, xp: 0 }, resourceMastery: {}, jobs: {},
