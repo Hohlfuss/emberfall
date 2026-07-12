@@ -483,16 +483,33 @@ export function useGame() {
       backendError.value = 'Connection lost. Gameplay is paused until the backend returns.'
     } finally {
       requestRunning = false
-      if (gameId.value) pollTimer = setTimeout(pollState, 250)
+      if (gameId.value) pollTimer = setTimeout(pollState, pollingInterval())
     }
   }
+
+  function pollingInterval() {
+    if (document.hidden) return 5000
+    const current = state.value
+    const hasTimedActivity = Boolean(
+      current?.battleStarted || current?.recovering || current?.enemyLoading || current?.crafting ||
+      current?.metalDetector.drilling || Object.values(current?.jobs || {}).some(Boolean) ||
+      (page.value === 'workers' && Object.values(current?.workerAssignments || {}).some(count => count > 0)),
+    )
+    return hasTimedActivity ? 500 : 1500
+  }
+
   function startPolling() { clearTimeout(pollTimer); pollTimer = setTimeout(pollState, 100) }
   async function sendAction(action: Record<string, unknown>) {
     if (!serverOnline.value || !gameId.value) return
     try {
       const response = await fetch(apiUrl('/api/games/' + gameId.value + '/actions'), { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + authToken.value }, body: JSON.stringify(action) })
       applyServerState(await readJson<ServerState>(response))
+      if (!requestRunning) startPolling()
     } catch (error) { actionError.value = error instanceof Error ? error.message : 'Action failed.' }
+  }
+
+  function handleVisibilityChange() {
+    if (!document.hidden && gameId.value) startPolling()
   }
 
   function startBattle() { void sendAction({ type: battleStarted.value ? 'retreat' : 'startBattle' }) }
@@ -523,10 +540,12 @@ export function useGame() {
   onMounted(() => {
     void connectBackend()
     void loadLeaderboard()
+    document.addEventListener('visibilitychange', handleVisibilityChange)
     healthTimer = setInterval(() => { if (!serverOnline.value) void connectBackend() }, 2000)
   })
   onBeforeUnmount(() => {
     clearTimeout(pollTimer); clearInterval(healthTimer); clearInterval(chatTimer)
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
     toastTimers.forEach(timer => clearTimeout(timer)); toastTimers.clear()
   })
 
