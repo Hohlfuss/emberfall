@@ -59,7 +59,7 @@ app.use((request, response, next) => {
 type Profession = { level: number; xp: number }
 type Enemy = { name: string; archetype: string; health: number; maxHealth: number; attack: number; defense: number; attackSpeed: number; xp: number; gold: number }
 type ShopUpgrade = 'medic' | 'scouting' | 'training' | 'fortitude' | 'autoBattle'
-type EventKind = 'achievement' | 'critical'
+type EventKind = 'achievement' | 'critical' | 'level' | 'rare' | 'yield'
 type GameEvent = { id: number; kind: EventKind; title: string; detail: string }
 type AchievementKind = 'level' | 'kills' | 'deaths' | 'tier' | 'gathered' | 'crafted' | 'workers' | 'woodLevel' | 'mineLevel' | 'gear' | 'actions' | 'goldEarned' | 'goldSpent'
 type AchievementDefinition = { id: string; name: string; description: string; kind: AchievementKind; goal: number; reward: number; icon: string }
@@ -535,14 +535,23 @@ function gainXp(game: Game, amount: number) {
     game.level++
     game.player.baseMaxHealth += 5
     game.player.baseAttack += 1
-    if (game.level % 2 === 0) game.player.baseDefense += 1
+    const gainedDefense = game.level % 2 === 0
+    if (gainedDefense) game.player.baseDefense += 1
     game.player.health = combatStats(game).maxHealth
     const earnedLevelWorkers = levelWorkerRewardCount(game.level)
+    let gainedWorker = false
     if (earnedLevelWorkers > game.levelRewardWorkers) {
       game.workers += earnedLevelWorkers - game.levelRewardWorkers
       game.levelRewardWorkers = earnedLevelWorkers
+      gainedWorker = true
       game.message = `Level ${game.level}! A gatherer joined you as a level reward.`
     } else game.message = `Level up! ${game.name} reached level ${game.level}.`
+    pushEvent(
+      game,
+      'level',
+      `Player level ${game.level}!`,
+      `+5 max health · +1 attack${gainedDefense ? ' · +1 defense' : ''}${gainedWorker ? ' · +1 gatherer' : ''}`,
+    )
   }
   checkAchievements(game)
 }
@@ -555,13 +564,17 @@ function giveResource(game: Game, resource: Resource, amount: number, allowRare 
     const rare = resource.skill === 'woodcutting' ? 'Ancient Resin' : resource.family === 'ore' ? 'Ore Crystal' : 'Rough Gem'
     game.inventory[rare] = (game.inventory[rare] || 0) + 1
     game.message = `Rare find: ${rare}!`
+    pushEvent(game, 'rare', 'Rare material found!', `${rare} · found while gathering ${resource.name}`)
   }
   const gainedXp = 3 + resource.tier * 2
   game.professions[resource.skill].xp += gainedXp
   while (game.professions[resource.skill].xp >= professionXpNeeded(game, resource.skill) && game.professions[resource.skill].level < 50) {
     game.professions[resource.skill].xp -= professionXpNeeded(game, resource.skill)
     game.professions[resource.skill].level++
-    game.message = `${resource.skill === 'woodcutting' ? 'Woodcutting' : 'Mining'} reached level ${game.professions[resource.skill].level}!`
+    const skillName = resource.skill === 'woodcutting' ? 'Woodcutting' : 'Mining'
+    const level = game.professions[resource.skill].level
+    game.message = `${skillName} reached level ${level}!`
+    pushEvent(game, 'level', `${skillName} level ${level}!`, 'Gathering speed and bonus-yield chance increased')
   }
   checkAchievements(game)
 }
@@ -585,6 +598,10 @@ function completeGather(game: Game, skill: Skill) {
   const stats = professionStats(game, skill)
   const amount = rollGatherYield(stats.bonusYieldPercent)
   giveResource(game, resource, amount, true)
+  if (amount >= 2) {
+    const title = amount === 2 ? 'Double yield!' : amount === 3 ? 'Triple yield!' : `${amount}× yield!`
+    pushEvent(game, 'yield', title, `${resource.icon} Gathered ${amount} × ${resource.item}`)
+  }
   gainFactionReputation(game, resource.skill === 'woodcutting' ? 'wardens' : 'delvers', Math.max(1, resource.tier))
   game.message = `Gathered ${amount} × ${resource.item}${job.critical ? ' with a critical harvest' : ''}.`
 }
@@ -611,7 +628,9 @@ function completeCraft(game: Game) {
   while (game.craftingProfession.xp >= craftingXpNeeded(game) && game.craftingProfession.level < 25) {
     game.craftingProfession.xp -= craftingXpNeeded(game)
     game.craftingProfession.level++
-    game.message = `Crafting reached level ${game.craftingProfession.level}! New recipes are now available.`
+    const level = game.craftingProfession.level
+    game.message = `Crafting reached level ${level}! New recipes are now available.`
+    pushEvent(game, 'level', `Crafting level ${level}!`, 'New recipes may now be available in the forge')
   }
   game.lifetime.crafted++
   game.message = `${recipe.name} completed and added to your inventory.${craft.receipt ? ` Materials: ${craft.receipt}.` : ''}`

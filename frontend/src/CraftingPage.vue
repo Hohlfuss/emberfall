@@ -446,7 +446,13 @@ function activeTimeRemaining(recipe: DisplayRecipe) {
             <p>{{ statusMessage(selectedRecipe) }}</p>
           </div>
           <button :disabled="!canCraft(selectedRecipe)" @click="emit('craft', selectedRecipe)">
-            {{ actionLabel(selectedRecipe) }}
+            <template v-if="recipeState(selectedRecipe) === 'active'">
+              <span>CRAFTING · {{ Math.floor(selectedRecipe.progress) }}%</span>
+              <span class="recipe-craft-progress" role="progressbar" :aria-label="`${selectedRecipe.name} crafting progress`" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.round(selectedRecipe.progress)">
+                <i :style="{ width: `${selectedRecipe.progress}%` }"></i>
+              </span>
+            </template>
+            <template v-else>{{ actionLabel(selectedRecipe) }}</template>
           </button>
         </footer>
       </article>

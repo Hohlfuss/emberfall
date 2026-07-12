@@ -32,6 +32,14 @@ const craftingRecipeId = ref('')
 const craftingRecipeView = ref<'all' | 'gear' | 'components'>('gear')
 const craftingRecipeTrail = ref<string[]>([])
 
+const toastIcons = {
+  achievement: '★',
+  critical: '✦',
+  level: '▲',
+  rare: '◆',
+  yield: '×',
+} as const
+
 function refreshHoverTitles() {
   void nextTick(() => {
     document.querySelectorAll<HTMLElement>('.resource-card').forEach((card, index) => {
@@ -101,7 +109,7 @@ onUpdated(refreshHoverTitles)
   </Teleport>
   <AuctionHouse v-if="playerName && page === 'auction'" :listings="auctionListings" :inventory="inventory" :gold="gold" :player-name="playerName" :error="auctionError" @refresh="loadAuction" @create="createAuction" @buy="buyAuction" @cancel="cancelAuction" />
   <FactionsPage v-if="playerName && page === 'factions'" :definitions="factionDefinitions" :progress="factions" :allied="alliedFaction" :level="level" @ally="allyFaction" />
-  <ChatPanel v-if="playerName" :messages="chatMessages" :online="chatOnline" :error="chatError" @send="sendChat" />
+  <ChatPanel v-if="playerName" :class="{ 'above-auto-battle': page === 'battle' && shopUpgrades.autoBattle > 0 }" :messages="chatMessages" :online="chatOnline" :error="chatError" @send="sendChat" />
   <Teleport to="body">
     <div v-if="offlineProgress" class="offline-progress-backdrop" role="presentation" @click.self="dismissOfflineProgress">
       <section class="offline-progress" role="dialog" aria-modal="true" aria-labelledby="offline-progress-title">
@@ -133,7 +141,7 @@ onUpdated(refreshHoverTitles)
   <Teleport to="body">
     <TransitionGroup name="toast" tag="div" class="toast-stack" aria-live="polite">
       <article v-for="toast in toasts" :key="toast.id" class="toast-card" :class="toast.kind" @click="dismissToast(toast.id)">
-        <b>{{ toast.kind === 'achievement' ? '★' : '✦' }}</b>
+        <b>{{ toastIcons[toast.kind] }}</b>
         <div><span>{{ toast.kind }}</span><strong>{{ toast.title }}</strong><small>{{ toast.detail }}</small></div>
       </article>
     </TransitionGroup>

@@ -2,7 +2,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { Gear, GearSlot, Page, ProfessionStats, Recipe, Resource, Skill } from './gameData'
 
 type ShopUpgradeId = 'medic' | 'scouting' | 'training' | 'fortitude' | 'autoBattle'
-type GameEvent = { id: number; kind: 'achievement' | 'critical'; title: string; detail: string }
+type GameEvent = { id: number; kind: 'achievement' | 'critical' | 'level' | 'rare' | 'yield'; title: string; detail: string }
 type Achievement = { id: string; name: string; description: string; goal: number; reward: number; icon: string; progress: number; unlocked: boolean }
 type StorePath = { id: string; name: string; icon: string; items: string[]; prices: number[] }
 type ShopUpgradeDetail = { id: ShopUpgradeId; name: string; description: string; icon: string; baseCost: number; max: number }
@@ -264,7 +264,7 @@ export function useGame() {
   function showToast(event: GameEvent) {
     const id = nextToastId++
     toasts.value.push({ id, kind: event.kind, title: event.title, detail: event.detail })
-    toastTimers.set(id, setTimeout(() => dismissToast(id), 2000))
+    toastTimers.set(id, setTimeout(() => dismissToast(id), 5000))
   }
   function dismissToast(id: number) {
     toasts.value = toasts.value.filter(toast => toast.id !== id)
