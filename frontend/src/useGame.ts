@@ -174,7 +174,7 @@ export function useGame() {
   const sellPrices = computed(() => state.value?.sellPrices || {})
   const resourceMastery = computed(() => state.value?.resourceMastery || {})
   const workers = computed(() => state.value?.workers || 0)
-  const workerPrice = computed(() => state.value?.workerPrice || 500)
+  const workerPrice = computed(() => state.value?.workerPrice || 1000)
   const workerAssignments = computed(() => state.value?.workerAssignments || {})
   const workerProgress = computed(() => state.value?.workerProgress || {})
   const freeWorkers = computed(() => state.value?.freeWorkers || 0)
