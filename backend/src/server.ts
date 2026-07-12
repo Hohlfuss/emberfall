@@ -1,10 +1,16 @@
 import express from 'express'
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto'
 import {
-  allResources, GAME_PACE_MULTIPLIER, gearCatalog, recipes as recipeData, rocks, slotLabels, woods,
+  allResources, GAME_PACE_MULTIPLIER, gearCatalog, rareMaterials, recipes as recipeData, rocks, slotLabels, woods,
   type Bonuses, type GearSlot, type ProfessionStats, type Recipe, type Resource, type Skill,
 } from '../../frontend/src/gameData.ts'
 import { rollGatherYield } from './gathering.ts'
+import { rollRareGatherMaterial } from './materials.ts'
+import {
+  craftingXpNeeded as craftingRequirement,
+  playerXpNeeded,
+  professionXpNeeded as professionRequirement,
+} from './progression.ts'
 import {
   DETECTOR_DRILL_MS, DETECTOR_MAX_CHARGES, DETECTOR_RECHARGE_MS,
   detectorDepthGain, detectorEmptyChance, detectorJackpotChance, detectorRewardScale, rechargeDetectorCharges,
@@ -450,9 +456,9 @@ async function saveGame(
   }
 }
 
-function xpNeeded(game: Game) { return Math.round(140 + 85 * (game.level - 1) ** 1.55) }
-function professionXpNeeded(game: Game, skill: Skill) { return Math.round(55 * game.professions[skill].level ** 1.8) }
-function craftingXpNeeded(game: Game) { return Math.round(70 * game.craftingProfession.level ** 1.7) }
+function xpNeeded(game: Game) { return playerXpNeeded(game.level) }
+function professionXpNeeded(game: Game, skill: Skill) { return professionRequirement(game.professions[skill].level) }
+function craftingXpNeeded(game: Game) { return craftingRequirement(game.craftingProfession.level) }
 function levelWorkerRewardCount(level: number) { return (level >= 2 ? 1 : 0) + Math.floor(level / 5) }
 function legacyLevelWorkerRewardCount(level: number) { return (level >= 2 ? 1 : 0) + Math.floor(level / 10) }
 function craftingStats(game: Game) {
@@ -476,7 +482,8 @@ function recipeLevel(recipe: Recipe, seen = new Set<string>()): number {
 function itemSellPrice(item: string) {
   const resource = allResources.find(candidate => candidate.item === item)
   if (resource) return Math.max(1, resource.tier * 2)
-  if (['Ancient Resin', 'Ore Crystal', 'Rough Gem'].includes(item)) return 6
+  const rareMaterial = rareMaterials.find(candidate => candidate.name === item)
+  if (rareMaterial) return rareMaterial.sellPrice
   const recipe = recipeData.find(candidate => candidate.outputItem === item)
   return recipe ? Math.max(2, recipeLevel(recipe) * 3) : 1
 }
@@ -621,11 +628,11 @@ function rollDetectorReward(game: Game): DetectorReward {
     return { kind: 'material', label: `${amount} × ${recipe.outputItem}`, detail: 'Buried crafted material', icon: '◆' }
   }
 
-  const rare = randomEntry(['Ancient Resin', 'Ore Crystal', 'Rough Gem'] as const)!
+  const rare = randomEntry(rareMaterials)!
   const amount = 1 + Math.floor(depth / 150)
-  addDetectorItem(game, rare, amount)
-  pushEvent(game, 'rare', 'Rare detector signal!', `${amount} × ${rare} recovered at ${depth}m`)
-  return { kind: 'rare', label: `${amount} × ${rare}`, detail: 'Rare buried material', icon: '✦' }
+  addDetectorItem(game, rare.name, amount)
+  pushEvent(game, 'rare', 'Rare detector signal!', `${amount} × ${rare.name} recovered at ${depth}m`)
+  return { kind: 'rare', label: `${amount} × ${rare.name}`, detail: 'Rare buried material', icon: rare.icon }
 }
 
 function achievementProgress(game: Game, achievement: AchievementDefinition) {
@@ -714,11 +721,11 @@ function giveResource(game: Game, resource: Resource, amount: number, allowRare 
   game.inventory[resource.item] = (game.inventory[resource.item] || 0) + amount
   game.lifetime.gathered += amount
   game.resourceMastery[resource.id] = (game.resourceMastery[resource.id] || 0) + amount
-  if (allowRare && Math.random() * 100 < Math.min(10, .5 + resource.tier * .75)) {
-    const rare = resource.skill === 'woodcutting' ? 'Ancient Resin' : resource.family === 'ore' ? 'Ore Crystal' : 'Rough Gem'
-    game.inventory[rare] = (game.inventory[rare] || 0) + 1
-    game.message = `Rare find: ${rare}!`
-    pushEvent(game, 'rare', 'Rare material found!', `${rare} · found while gathering ${resource.name}`)
+  const rare = allowRare ? rollRareGatherMaterial(resource) : undefined
+  if (rare) {
+    game.inventory[rare.name] = (game.inventory[rare.name] || 0) + 1
+    game.message = `Rare find: ${rare.name}!`
+    pushEvent(game, 'rare', 'Rare material found!', `${rare.icon} ${rare.name} · found while gathering ${resource.name}`)
   }
   const gainedXp = 3 + resource.tier * 2
   game.professions[resource.skill].xp += gainedXp
@@ -1353,7 +1360,7 @@ function captureOfflineProgress(game: Game, now: number): { state: ReturnType<ty
   }
 }
 
-const config = { woods, rocks, allResources, gearCatalog, recipes: recipeData, slotLabels, storePaths, shopUpgradeDetails, factionDefinitions }
+const config = { woods, rocks, allResources, rareMaterials, gearCatalog, recipes: recipeData, slotLabels, storePaths, shopUpgradeDetails, factionDefinitions }
 
 function passwordHash(password: string, salt: string) {
   return scryptSync(password, salt, 64).toString('hex')

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { GAME_PACE_MULTIPLIER, type Gear, type GearSlot, type Recipe, type Resource, type Skill } from './gameData'
+import { GAME_PACE_MULTIPLIER, type Gear, type GearSlot, type RareMaterial, type Recipe, type Resource, type Skill } from './gameData'
 
 type DisplayRecipe = Recipe & { progress: number; remaining?: number }
 type RecipeState = 'active' | 'ready' | 'missing' | 'locked'
@@ -12,6 +12,7 @@ const props = defineProps<{
   gearCatalog: Record<string, Gear>
   equipment: Partial<Record<GearSlot, string | undefined>>
   resources: Resource[]
+  rareMaterials: RareMaterial[]
   recipeLevels: Record<string, number>
   craftingId: string
   profession: { level: number; xp: number; xpNeeded: number }
@@ -33,12 +34,6 @@ const views: Array<{ id: RecipeView; label: string }> = [
   { id: 'gear', label: 'Equipment' },
   { id: 'components', label: 'Components' },
 ]
-
-const rareMaterialSources: Partial<Record<string, { skill: Skill; description: string }>> = {
-  'Ancient Resin': { skill: 'woodcutting', description: 'Rare drop from any tree' },
-  'Ore Crystal': { skill: 'mining', description: 'Rare drop from ore veins' },
-  'Rough Gem': { skill: 'mining', description: 'Rare drop from rock deposits' },
-}
 
 const detailPanel = ref<HTMLElement>()
 
@@ -132,7 +127,7 @@ function ingredientRecipe(item: string) {
 }
 
 function ingredientSource(item: string): Skill | undefined {
-  return props.resources.find(resource => resource.item === item)?.skill || rareMaterialSources[item]?.skill
+  return props.resources.find(resource => resource.item === item)?.skill || props.rareMaterials.find(material => material.name === item)?.skill
 }
 
 function revealDetailsOnSmallScreen() {
@@ -298,7 +293,7 @@ function missingMaterialHint(item: string, needed: number) {
     const batches = Math.ceil(deficit / (component.outputQty || 1))
     return `Craft ${batches} ${batches === 1 ? 'batch' : 'batches'} to make ${deficit} more`
   }
-  const rareSource = rareMaterialSources[item]
+  const rareSource = props.rareMaterials.find(material => material.name === item)
   if (rareSource) return `${rareSource.description} · find ${deficit} more`
   const source = ingredientSource(item)
   return source ? `${source} · gather ${deficit} more` : `Find ${deficit} more`

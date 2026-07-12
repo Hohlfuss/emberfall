@@ -17,7 +17,7 @@ const {
   tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authLoading, serverOnline, backendError, playerName, playerTitle, gold, level, xp, xpNeeded, message, player, combatStats, dps,
   enemyTier, highestEnemyTier, enemy, battleStarted, autoBattle, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
   heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
-  woods, rocks, allResources, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, sellPrices, resourceMastery,
+  woods, rocks, allResources, rareMaterials, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, sellPrices, resourceMastery,
   workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId,
   craftingProfession, craftingStats,
   factionDefinitions, alliedFaction, factions,
@@ -82,7 +82,7 @@ watch(playerName, name => {
       <div class="resource-grid"><article v-for="resource in page === 'woodcutting' ? woods : rocks" :key="resource.id" class="resource-card" :class="{ locked: !isUnlocked(resource) }" :style="{ '--accent': resource.color }" :title="resourceTooltip(resource)"><div class="resource-icon">{{ resource.icon }}</div><div><span class="tier">LEVEL {{ resource.tier }} · {{ resource.family }}</span><h3>{{ resource.name }}</h3><p>{{ resource.item }} · {{ effectiveDuration(resource).toFixed(1) }}s effective</p><small>Mastery {{ resourceMastery[resource.id] || 0 }} · +{{ Math.floor((resourceMastery[resource.id] || 0) / 10) }}% speed</small></div><div class="action-area"><div class="meter" :class="{ critical: jobs[page]?.id === resource.id && jobs[page]?.critical }"><i :style="{ width: `${jobs[page]?.id === resource.id ? jobs[page]?.progress : 0}%` }"></i></div><button @click="gather(resource)" :disabled="!!jobs[page] || !isUnlocked(resource)">{{ !isUnlocked(resource) ? `LEVEL ${resource.tier}` : jobs[page]?.id === resource.id ? `${jobs[page]?.critical ? 'CRIT · ' : ''}${Math.floor(jobs[page]?.progress || 0)}%` : page === 'woodcutting' ? 'CHOP' : 'MINE' }}</button></div><b class="owned">{{ inventory[resource.item] || 0 }} owned</b></article></div>
     </section>
 
-    <CraftingPage v-else-if="page === 'crafting'" v-model:selected-id="craftingRecipeId" v-model:view="craftingRecipeView" v-model:trail="craftingRecipeTrail" :recipes="craftingRecipes" :inventory="inventory" :gear-catalog="gearCatalog" :equipment="equipment" :resources="allResources" :recipe-levels="recipeLevels" :crafting-id="craftingId" :profession="craftingProfession" :stats="craftingStats" @craft="craft" @navigate="page = $event" />
+    <CraftingPage v-else-if="page === 'crafting'" v-model:selected-id="craftingRecipeId" v-model:view="craftingRecipeView" v-model:trail="craftingRecipeTrail" :recipes="craftingRecipes" :inventory="inventory" :gear-catalog="gearCatalog" :equipment="equipment" :resources="allResources" :rare-materials="rareMaterials" :recipe-levels="recipeLevels" :crafting-id="craftingId" :profession="craftingProfession" :stats="craftingStats" @craft="craft" @navigate="page = $event" />
 
     <MetalDetectorPage v-else-if="page === 'metal detector'" :detector="metalDetector" :gold="gold" @reveal="revealDetectorTile" @drill="startDetectorDrill" @relocate="newDetectorSite" />
 

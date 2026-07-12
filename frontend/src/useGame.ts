@@ -1,5 +1,5 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import type { Gear, GearSlot, Page, ProfessionStats, Recipe, Resource, Skill } from './gameData'
+import type { Gear, GearSlot, Page, ProfessionStats, RareMaterial, Recipe, Resource, Skill } from './gameData'
 
 type ShopUpgradeId = 'medic' | 'scouting' | 'training' | 'fortitude' | 'autoBattle'
 type GameEvent = { id: number; kind: 'achievement' | 'critical' | 'level' | 'rare' | 'yield' | 'worker'; title: string; detail: string }
@@ -13,6 +13,7 @@ type GameConfig = {
   woods: Resource[]
   rocks: Resource[]
   allResources: Resource[]
+  rareMaterials: RareMaterial[]
   gearCatalog: Record<string, Gear>
   recipes: Recipe[]
   slotLabels: Record<GearSlot, string>
@@ -133,7 +134,7 @@ export function useGame() {
   const gold = computed(() => state.value?.gold || 0)
   const level = computed(() => state.value?.level || 1)
   const xp = computed(() => state.value?.xp || 0)
-  const xpNeeded = computed(() => state.value?.xpNeeded || 100)
+  const xpNeeded = computed(() => state.value?.xpNeeded || 154)
   const message = computed(() => actionError.value || state.value?.message || backendError.value)
   const player = computed(() => state.value?.player || { health: 0 })
   const combatStats = computed(() => {
@@ -164,12 +165,13 @@ export function useGame() {
   const woods = computed(() => config.value?.woods || [])
   const rocks = computed(() => config.value?.rocks || [])
   const allResources = computed(() => config.value?.allResources || [])
+  const rareMaterials = computed(() => config.value?.rareMaterials || [])
   const gearCatalog = computed(() => config.value?.gearCatalog || {})
   const slotLabels = computed(() => config.value?.slotLabels || {} as Record<GearSlot, string>)
   const gearSlots = computed(() => Object.keys(slotLabels.value) as GearSlot[])
   const storePaths = computed(() => config.value?.storePaths || [])
   const shopUpgradeDetails = computed(() => config.value?.shopUpgradeDetails || [])
-  const professions = computed(() => state.value?.professions || { woodcutting: { level: 1, xp: 0, xpNeeded: 15 }, mining: { level: 1, xp: 0, xpNeeded: 15 } })
+  const professions = computed(() => state.value?.professions || { woodcutting: { level: 1, xp: 0, xpNeeded: 61 }, mining: { level: 1, xp: 0, xpNeeded: 61 } })
   const jobs = computed(() => state.value?.jobs || {})
   const inventory = computed(() => state.value?.inventory || {})
   const sellPrices = computed(() => state.value?.sellPrices || {})
@@ -189,7 +191,7 @@ export function useGame() {
   const factions = computed(() => state.value?.factions || { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } })
   const dailyObjectives = computed(() => state.value?.dailyObjectives || [])
   const dailyResetAt = computed(() => state.value?.dailyResetAt || Date.now())
-  const craftingProfession = computed(() => state.value?.craftingProfession || { level: 1, xp: 0, xpNeeded: 35 })
+  const craftingProfession = computed(() => state.value?.craftingProfession || { level: 1, xp: 0, xpNeeded: 77 })
   const craftingStats = computed(() => state.value?.craftingStats || { speed: 0, conservationChance: 0, bonusOutputChance: 0, totalCrafts: 0, materialsSaved: 0, bonusOutputs: 0 })
   const craftingId = computed(() => state.value?.crafting?.id || '')
   const recipeLevels = computed(() => state.value?.recipeLevels || {})
@@ -272,6 +274,11 @@ export function useGame() {
     const stats = professionStats(resource.skill)
     const guaranteedYield = 1 + Math.floor(stats.bonusYieldPercent / 100)
     const remainderChance = stats.bonusYieldPercent % 100
+    const secondaryDrops = rareMaterials.value
+      .filter(material => material.family === resource.family && material.minTier <= resource.tier)
+      .map(material => `${material.icon} ${material.name}`)
+      .join(', ')
+    const rareChance = Math.min(10, .5 + resource.tier * .75)
     return [
       resource.name,
       `Requires ${resource.skill} level ${resource.tier}`,
@@ -281,7 +288,7 @@ export function useGame() {
       `Bonus yield: ${stats.bonusYieldPercent.toFixed(1)}% (${guaranteedYield} guaranteed${remainderChance ? `, plus a ${remainderChance.toFixed(1)}% chance for ${guaranteedYield + 1}` : ''})`,
       `Mastery: ${mastery} (+${Math.floor(mastery / 10)}% speed)`,
       `Critical harvest: ${stats.critChance.toFixed(1)}% chance to run at ${stats.critPower.toFixed(2)}× speed; the bonus-yield roll is unchanged.`,
-      `Rare materials have a small resource-tier-based drop chance.`,
+      `Rare material chance: ${rareChance.toFixed(2)}% (${secondaryDrops || 'none'})`,
     ].join('\n')
   }
 
@@ -555,7 +562,7 @@ export function useGame() {
     tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authLoading, serverOnline, backendError, playerName, playerTitle, gold, level, xp, xpNeeded, message, player, combatStats, dps,
     enemyTier, highestEnemyTier, enemy, battleStarted, autoBattle, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
     heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
-    woods, rocks, allResources, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, sellPrices, resourceMastery,
+    woods, rocks, allResources, rareMaterials, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, sellPrices, resourceMastery,
     workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId, craftingProfession, craftingStats, factionDefinitions, alliedFaction, factions, dailyObjectives, dailyResetAt, metalDetector,
     craftingRecipes, recipeLevels, storeListings, materialGroups, toasts,
     leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,

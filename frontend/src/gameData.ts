@@ -2,6 +2,7 @@ export type Page = 'battle' | 'woodcutting' | 'mining' | 'crafting' | 'metal det
 export type Skill = 'woodcutting' | 'mining'
 export type GearSlot = 'weapon' | 'helmet' | 'chest' | 'legs' | 'boots' | 'gloves' | 'ring' | 'amulet' | 'pickaxe' | 'hatchet'
 export type ProfessionStats = { speed: number; bonusYieldPercent: number; critChance: number; critPower: number }
+export type ResourceFamily = 'wood' | 'ore' | 'rock'
 
 // Keep every timed activity moving at the same slightly brisker pace.
 export const GAME_PACE_MULTIPLIER = .9
@@ -15,7 +16,17 @@ export type Resource = {
   icon: string
   color: string
   skill: Skill
-  family: string
+  family: ResourceFamily
+}
+
+export type RareMaterial = {
+  name: string
+  icon: string
+  skill: Skill
+  family: ResourceFamily
+  minTier: number
+  sellPrice: number
+  description: string
 }
 
 export type Bonuses = Partial<{
@@ -87,6 +98,18 @@ export const woods: Resource[] = treeData.map(([id, name, item, tier, duration, 
 export const rocks: Resource[] = miningData.map(([id, name, item, tier, duration, icon, color, family]) => ({ id, name, item, tier, duration, icon, color, skill: 'mining', family }))
 export const allResources = [...woods, ...rocks]
 
+export const rareMaterials: RareMaterial[] = [
+  { name: 'Ancient Resin', icon: '🟠', skill: 'woodcutting', family: 'wood', minTier: 1, sellPrice: 6, description: 'Rare drop from any tree.' },
+  { name: 'Living Bark', icon: '🌿', skill: 'woodcutting', family: 'wood', minTier: 4, sellPrice: 12, description: 'Rare drop from tier 4+ trees.' },
+  { name: 'Spirit Pollen', icon: '✨', skill: 'woodcutting', family: 'wood', minTier: 8, sellPrice: 24, description: 'Rare drop from tier 8+ trees.' },
+  { name: 'Ore Crystal', icon: '🔷', skill: 'mining', family: 'ore', minTier: 1, sellPrice: 6, description: 'Rare drop from any ore vein.' },
+  { name: 'Cinder Coal', icon: '⬛', skill: 'mining', family: 'ore', minTier: 4, sellPrice: 12, description: 'Rare drop from tier 4+ ore veins.' },
+  { name: 'Starsteel Dust', icon: '🌠', skill: 'mining', family: 'ore', minTier: 8, sellPrice: 24, description: 'Rare drop from tier 8+ ore veins.' },
+  { name: 'Rough Gem', icon: '💎', skill: 'mining', family: 'rock', minTier: 1, sellPrice: 6, description: 'Rare drop from any rock deposit.' },
+  { name: 'Fossil Shard', icon: '🦴', skill: 'mining', family: 'rock', minTier: 4, sellPrice: 12, description: 'Rare drop from tier 4+ rock deposits.' },
+  { name: 'Runestone Fragment', icon: '🔹', skill: 'mining', family: 'rock', minTier: 8, sellPrice: 24, description: 'Rare drop from tier 8+ rock deposits.' },
+]
+
 export const gearCatalog: Record<string, Gear> = {
   rustySword: { id: 'rustySword', name: 'Rusty Sword', slot: 'weapon', tier: 0, icon: '🗡️', description: 'Still sharper than your fists.', bonuses: { attack: 2 } },
   wornHatchet: { id: 'wornHatchet', name: 'Worn Hatchet', slot: 'hatchet', tier: 0, icon: '🪓', description: 'A battered starter hatchet.', bonuses: {} },
@@ -132,11 +155,11 @@ export const recipes: Recipe[] = [
   { id: 'pineHatchetRecipe', name: 'Pinebound Hatchet', category: 'tools', description: 'Craft an equippable tier I hatchet.', duration: 25, costs: { 'Pine Plank': 3, Stone: 4 }, outputGear: 'pineHatchet', progress: 0 },
   { id: 'copperPickaxeRecipe', name: 'Copper Pickaxe', category: 'tools', description: 'Craft an equippable tier I pickaxe.', duration: 28, costs: { 'Pine Plank': 2, 'Copper Ingot': 2 }, outputGear: 'copperPickaxe', progress: 0 },
   { id: 'oakHatchetRecipe', name: 'Oaksteel Hatchet', category: 'tools', description: 'A fast logging tool with stronger critical harvests.', duration: 55, costs: { 'Pinebound Frame': 2, 'Oak Plank': 5, 'Iron Fittings': 3 }, outputGear: 'oakHatchet', progress: 0 },
-  { id: 'mapleHatchetRecipe', name: 'Ember Maple Hatchet', category: 'tools', description: 'A rapid mid-tier hatchet with excellent crit chance.', duration: 78, costs: { 'Pinebound Frame': 2, 'Iron Fittings': 4, 'Tempered Tool Head': 2, 'Ancient Resin': 3 }, outputGear: 'mapleHatchet', progress: 0 },
+  { id: 'mapleHatchetRecipe', name: 'Ember Maple Hatchet', category: 'tools', description: 'A rapid mid-tier hatchet assembled from layered maple and steel.', duration: 78, costs: { 'Pinebound Frame': 2, 'Maple Plank': 5, 'Steel Ingot': 2, 'Ancient Resin': 2 }, outputGear: 'mapleHatchet', progress: 0 },
   { id: 'ironPickaxeRecipe', name: 'Iron Pickaxe', category: 'tools', description: 'A fast mining tool with stronger critical harvests.', duration: 55, costs: { 'Pinebound Frame': 2, 'Iron Fittings': 3, 'Tempered Tool Head': 2 }, outputGear: 'ironPickaxe', progress: 0 },
-  { id: 'silverPickaxeRecipe', name: 'Silvervein Pickaxe', category: 'tools', description: 'An advanced tool with speed, crit, and bonus yield.', duration: 105, costs: { 'Iron Fittings': 4, 'Tempered Tool Head': 3, 'Silver Mechanism': 3, 'Ore Crystal': 3 }, outputGear: 'silverPickaxe', progress: 0 },
-  { id: 'yewHatchetRecipe', name: 'Yew Moon Hatchet', category: 'tools', description: 'A rare bonus-yield upgrade with exceptional speed and crit power.', duration: 110, costs: { 'Pinebound Frame': 3, 'Tempered Tool Head': 3, 'Silver Mechanism': 4, 'Resin Binding': 3 }, outputGear: 'yewHatchet', progress: 0 },
-  { id: 'mythrilPickaxeRecipe', name: 'Mythril Pickaxe', category: 'tools', description: 'The ultimate tool for deep mining.', duration: 180, costs: { 'Pinebound Frame': 4, 'Iron Fittings': 5, 'Silver Mechanism': 5, 'Obsidian Core': 3, 'Mythril Assembly': 2 }, outputGear: 'mythrilPickaxe', progress: 0 },
+  { id: 'silverPickaxeRecipe', name: 'Silvervein Pickaxe', category: 'tools', description: 'An advanced steel-and-silver tool with speed, crit, and bonus yield.', duration: 105, costs: { 'Iron Fittings': 3, 'Steel Ingot': 3, 'Silver Mechanism': 3, 'Ore Crystal': 2 }, outputGear: 'silverPickaxe', progress: 0 },
+  { id: 'yewHatchetRecipe', name: 'Yew Moon Hatchet', category: 'tools', description: 'A rare layered-yew upgrade with exceptional speed and crit power.', duration: 110, costs: { 'Pinebound Frame': 2, 'Yew Plank': 4, 'Silver Mechanism': 3, 'Resin Binding': 3 }, outputGear: 'yewHatchet', progress: 0 },
+  { id: 'mythrilPickaxeRecipe', name: 'Mythril Pickaxe', category: 'tools', description: 'The ultimate tool, finished with starsteel and a focused runestone.', duration: 180, costs: { 'Pinebound Frame': 2, 'Obsidian Core': 3, 'Mythril Assembly': 2, 'Starsteel Ingot': 2, Runestone: 2 }, outputGear: 'mythrilPickaxe', progress: 0 },
   { id: 'ironSwordRecipe', name: 'Iron Longsword', category: 'combat', description: 'A large improvement to attack damage.', duration: 45, costs: { 'Iron Ingot': 4, 'Oak Log': 4 }, outputGear: 'ironSword', progress: 0 },
   { id: 'ironHelmRecipe', name: 'Iron Helm', category: 'combat', description: 'Increases defense and maximum health.', duration: 40, costs: { 'Iron Ingot': 3, 'Oak Log': 2 }, outputGear: 'ironHelm', progress: 0 },
   { id: 'ironChestRecipe', name: 'Ironbark Cuirass', category: 'combat', description: 'Heavy protection for dangerous enemy tiers.', duration: 75, costs: { 'Iron Ingot': 6, 'Oak Log': 8 }, outputGear: 'ironChest', progress: 0 },
@@ -144,7 +167,7 @@ export const recipes: Recipe[] = [
   { id: 'trailBootsRecipe', name: 'Trailrunner Boots', category: 'combat', description: 'Improves combat and gathering speed.', duration: 32, costs: { 'Birch Log': 8, 'Copper Ingot': 2 }, outputGear: 'trailBoots', progress: 0 },
   { id: 'loggerGlovesRecipe', name: 'Artisan Gloves', category: 'accessories', description: 'Improves gathering speed and crit chance for both skills.', duration: 48, costs: { 'Maple Log': 8, 'Iron Ingot': 2 }, outputGear: 'loggerGloves', progress: 0 },
   { id: 'silverRingRecipe', name: 'Ring of Momentum', category: 'accessories', description: 'Improves woodcutting and mining speed.', duration: 85, costs: { 'Silver Ingot': 5, 'Gold Ore': 2 }, outputGear: 'silverRing', progress: 0 },
-  { id: 'moonAmuletRecipe', name: 'Moonstone Amulet', category: 'accessories', description: 'Greatly improves gathering crit power.', duration: 150, costs: { Moonstone: 6, 'Spirit Log': 5, 'Gold Ore': 5 }, outputGear: 'moonAmulet', progress: 0 },
+  { id: 'moonAmuletRecipe', name: 'Moonstone Amulet', category: 'accessories', description: 'Spiritweave and runestone focus its immense gathering crit power.', duration: 150, costs: { Moonstone: 4, Spiritweave: 3, Runestone: 2, 'Gold Ingot': 3 }, outputGear: 'moonAmulet', progress: 0 },
   { id: 'birchPlank', name: 'Birch Plank', category: 'components', description: 'Prepare one flexible board for light equipment.', duration: 16, costs: { 'Birch Log': 3 }, outputItem: 'Birch Plank', outputQty: 1, progress: 0 },
   { id: 'oakPlank', name: 'Oak Plank', category: 'components', description: 'Prepare one dense board for armor and tool hafts.', duration: 25, costs: { 'Oak Log': 3 }, outputItem: 'Oak Plank', outputQty: 1, progress: 0 },
   { id: 'stoneBlock', name: 'Cut Stone Block', category: 'components', description: 'A precisely shaped building component.', duration: 16, costs: { Stone: 4 }, outputItem: 'Stone Block', outputQty: 1, progress: 0 },
@@ -154,6 +177,13 @@ export const recipes: Recipe[] = [
   { id: 'resinBinding', name: 'Resin Binding', category: 'components', description: 'Flexible reinforcement made from rare tree resin.', duration: 30, costs: { 'Ancient Resin': 2, 'Birch Plank': 1 }, outputItem: 'Resin Binding', outputQty: 2, progress: 0 },
   { id: 'cutGem', name: 'Cut Gem', category: 'components', description: 'A rough gem shaped for accessories and enchantments.', duration: 42, costs: { 'Rough Gem': 3, 'Silver Ingot': 1 }, outputItem: 'Cut Gem', outputQty: 1, progress: 0 },
   { id: 'crystalLens', name: 'Crystal Lens', category: 'components', description: 'A focused ore crystal for precision equipment.', duration: 55, costs: { 'Ore Crystal': 3, 'Gold Ingot': 1 }, outputItem: 'Crystal Lens', outputQty: 1, progress: 0 },
+  { id: 'maplePlank', name: 'Resin-Cured Maple Plank', category: 'components', description: 'Living bark binds maple into a resilient tool-grade board.', duration: 38, costs: { 'Maple Log': 3, 'Living Bark': 1 }, outputItem: 'Maple Plank', outputQty: 1, progress: 0 },
+  { id: 'yewPlank', name: 'Moon-Cured Yew Plank', category: 'components', description: 'A dense yew board that keeps its living grain.', duration: 58, costs: { 'Yew Log': 4, 'Living Bark': 1 }, outputItem: 'Yew Plank', outputQty: 1, progress: 0 },
+  { id: 'spiritWeave', name: 'Spiritweave', category: 'components', description: 'Spirit pollen woven through cedar fibers and flexible resin.', duration: 105, costs: { 'Spirit Log': 3, 'Spirit Pollen': 2, 'Resin Binding': 1 }, outputItem: 'Spiritweave', outputQty: 1, progress: 0 },
+  { id: 'steelIngot', name: 'Steel Ingot', category: 'components', description: 'Cinder coal tempers refined iron into dependable tool steel.', duration: 52, costs: { 'Iron Ingot': 2, 'Cinder Coal': 2 }, outputItem: 'Steel Ingot', outputQty: 1, progress: 0 },
+  { id: 'fossilComposite', name: 'Fossil Composite', category: 'components', description: 'Fossil shards laminated between granite and resin.', duration: 74, costs: { 'Fossil Shard': 3, 'Granite Block': 1, 'Resin Binding': 1 }, outputItem: 'Fossil Composite', outputQty: 1, progress: 0 },
+  { id: 'runestone', name: 'Focused Runestone', category: 'components', description: 'Ancient fragments fused around a crystal lens and obsidian plate.', duration: 128, costs: { 'Runestone Fragment': 3, 'Crystal Lens': 1, 'Obsidian Plate': 1 }, outputItem: 'Runestone', outputQty: 1, progress: 0 },
+  { id: 'starsteelIngot', name: 'Starsteel Ingot', category: 'components', description: 'Mythril alloyed with starsteel dust and enchantment-bearing gold.', duration: 155, costs: { 'Mythril Ingot': 2, 'Starsteel Dust': 3, 'Gold Ingot': 1 }, outputItem: 'Starsteel Ingot', outputQty: 1, progress: 0 },
   { id: 'bronzeSwordRecipe', name: 'Bronze Shortsword', category: 'combat', description: 'An accessible weapon needed for tier III.', duration: 32, costs: { 'Copper Ingot': 2, 'Pine Plank': 1 }, outputGear: 'bronzeSword', progress: 0 },
   { id: 'copperHelmRecipe', name: 'Copper Cap', category: 'combat', description: 'Early health and defense.', duration: 30, costs: { 'Copper Ingot': 2, 'Pine Plank': 1 }, outputGear: 'copperHelm', progress: 0 },
   { id: 'copperChestRecipe', name: 'Copper Scale Vest', category: 'combat', description: 'Early armor for surviving tier II and III.', duration: 45, costs: { 'Copper Ingot': 4, 'Birch Plank': 2 }, outputGear: 'copperChest', progress: 0 },
@@ -166,7 +196,7 @@ export const recipes: Recipe[] = [
   { id: 'reinforcedBeam', name: 'Reinforced Oak Beam', category: 'components', description: 'A layered structural component for masterwork equipment.', duration: 52, costs: { 'Oak Plank': 3, 'Iron Ingot': 2, 'Resin Binding': 1 }, outputItem: 'Reinforced Beam', outputQty: 1, progress: 0 },
   { id: 'runedPlate', name: 'Runed Obsidian Plate', category: 'components', description: 'An obsidian plate engraved around a focused crystal.', duration: 95, costs: { 'Obsidian Plate': 2, 'Crystal Lens': 1, 'Gold Ingot': 1 }, outputItem: 'Runed Plate', outputQty: 1, progress: 0 },
   { id: 'forgeGlovesRecipe', name: 'Runebound Forge Gloves', category: 'accessories', description: 'A multi-stage masterwork that improves both gathering skills.', duration: 115, costs: { 'Resin Binding': 4, 'Reinforced Beam': 2, 'Silver Ingot': 3 }, outputGear: 'forgeGloves', progress: 0 },
-  { id: 'masterBootsRecipe', name: 'Obsidian Pathfinder Boots', category: 'combat', description: 'Advanced boots combining runed plate and flexible bindings.', duration: 155, costs: { 'Runed Plate': 3, 'Resin Binding': 4, 'Yew Log': 5 }, outputGear: 'masterBoots', progress: 0 },
+  { id: 'masterBootsRecipe', name: 'Obsidian Pathfinder Boots', category: 'combat', description: 'Advanced boots combining runed plate, fossil laminate, and flexible yew.', duration: 155, costs: { 'Runed Plate': 3, 'Fossil Composite': 2, 'Resin Binding': 4, 'Yew Plank': 2 }, outputGear: 'masterBoots', progress: 0 },
   { id: 'pineboundFrame', name: 'Pinebound Frame', category: 'components', description: 'The reusable foundation of tool and weapon construction.', duration: 22, costs: { 'Pine Plank': 3, 'Copper Ingot': 1 }, outputItem: 'Pinebound Frame', outputQty: 1, progress: 0 },
   { id: 'ironFittings', name: 'Iron Fittings', category: 'components', description: 'Iron hardware fitted around an earlier pinebound frame.', duration: 38, costs: { 'Pinebound Frame': 1, 'Iron Ingot': 3, 'Oak Plank': 2 }, outputItem: 'Iron Fittings', outputQty: 2, progress: 0 },
   { id: 'temperedToolHead', name: 'Tempered Tool Head', category: 'components', description: 'A reinforced working edge built from fittings and refined iron.', duration: 52, costs: { 'Iron Fittings': 2, 'Iron Ingot': 3, 'Granite Block': 1 }, outputItem: 'Tempered Tool Head', outputQty: 1, progress: 0 },
