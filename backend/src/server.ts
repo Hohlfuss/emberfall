@@ -22,7 +22,7 @@ import {
   detectorDepthGain, detectorEmptyChance, detectorJackpotChance, detectorRewardScale, rechargeDetectorCharges,
 } from './detector.ts'
 import { supabase } from "../supabase.ts";
-import { googleUsernameCandidates, verifyGoogleCredential } from './googleAuth.ts'
+import { canonicalDisplayName, googleUsernameCandidates, sanitizeDisplayName, verifyGoogleCredential } from './googleAuth.ts'
 
 const leaderboardCategories = {
   level: {
@@ -1515,10 +1515,12 @@ app.post('/api/auth/google', async (request, response) => {
       ? { state: publicState(game) }
       : captureOfflineProgress(game, Date.now())
     await saveGame(playerRow.username, game)
+    const needsDisplayName = isNewPlayer || playerRow.name === identity.name
 
     return response.status(isNewPlayer ? 201 : 200).json({
       token: issueToken(playerRow.username, game.id),
       ...loginResult,
+      needsDisplayName,
     })
   } catch (error) {
     console.error('Google login error:', error)
@@ -1527,6 +1529,68 @@ app.post('/api/auth/google', async (request, response) => {
       return response.status(401).json({ error: 'Google sign-in could not be verified.' })
     }
     return response.status(500).json({ error: 'Could not log in with Google.' })
+  }
+})
+
+app.post('/api/auth/display-name', async (request, response) => {
+  try {
+    const token = request.headers.authorization?.startsWith('Bearer ')
+      ? request.headers.authorization.slice(7)
+      : ''
+    const session = tokens.get(token)
+    if (!session) {
+      return response.status(401).json({ error: 'Invalid or expired game session.' })
+    }
+
+    const rawName = typeof request.body?.displayName === 'string' ? request.body.displayName : ''
+    let displayName = ''
+    try {
+      displayName = sanitizeDisplayName(rawName)
+    } catch (error) {
+      return response.status(400).json({ error: error instanceof Error ? error.message : 'Display name is invalid.' })
+    }
+
+    const canonical = canonicalDisplayName(displayName)
+    const { data: existingRows, error: lookupError } = await supabase
+      .from('players')
+      .select('username, name')
+      .neq('username', session.username)
+
+    if (lookupError) throw lookupError
+    const taken = existingRows?.some(player => canonicalDisplayName(player.name || '') === canonical)
+    if (taken) {
+      return response.status(409).json({ error: 'That display name is already taken.' })
+    }
+
+    const { data: playerRow, error: fetchError } = await supabase
+      .from('players')
+      .select('username, name, game_id, game_state')
+      .eq('username', session.username)
+      .maybeSingle()
+
+    if (fetchError) throw fetchError
+    if (!playerRow) {
+      return response.status(404).json({ error: 'Player not found.' })
+    }
+
+    const game = deserializeGame(playerRow.game_state)
+    game.id = playerRow.game_id
+    game.name = displayName
+    games.set(game.id, game)
+    gameOwners.set(game.id, session.username)
+
+    const { error: saveError } = await supabase
+      .from('players')
+      .update({ name: displayName, game_state: serializeGame(game) })
+      .eq('username', session.username)
+
+    if (saveError) throw saveError
+
+    await saveGame(session.username, game)
+    return response.json({ state: publicState(game), displayName })
+  } catch (error) {
+    console.error('Display name error:', error)
+    return response.status(500).json({ error: 'Could not save display name.' })
   }
 })
 

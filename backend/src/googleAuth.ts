@@ -19,6 +19,21 @@ export type GoogleIdentity = {
   name: string
 }
 
+export function sanitizeDisplayName(input: string): string {
+  const trimmed = input.trim()
+  if (trimmed.length < 3 || trimmed.length > 18) {
+    throw new Error('Display name must be 3-18 characters long.')
+  }
+  if (!/^[a-zA-Z0-9 _-]+$/.test(trimmed)) {
+    throw new Error('Display name may only contain letters, numbers, spaces, underscores, or hyphens.')
+  }
+  return trimmed.replace(/\s+/g, ' ').slice(0, 18)
+}
+
+export function canonicalDisplayName(input: string): string {
+  return sanitizeDisplayName(input).trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
 export async function verifyGoogleCredential(
   credential: string,
   clientId: string,

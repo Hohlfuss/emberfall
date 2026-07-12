@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { googleUsernameCandidates, verifyGoogleCredential, type GoogleTokenVerifier } from './googleAuth.ts'
+import { canonicalDisplayName, googleUsernameCandidates, sanitizeDisplayName, verifyGoogleCredential, type GoogleTokenVerifier } from './googleAuth.ts'
 
 test('Google credentials are accepted only for this app and verified email addresses', async () => {
   const verifier: GoogleTokenVerifier = {
@@ -63,4 +63,17 @@ test('Google username candidates stay within the stored username rules', () => {
   const candidates = googleUsernameCandidates('Jari.Rautavuori@gmail.com', '6789abcd')
   assert.ok(candidates.every(candidate => /^[a-z0-9_-]{3,18}$/.test(candidate)))
   assert.ok(candidates.every(candidate => !candidate.includes('.')))
+})
+
+test('Display names are normalized and validated', () => {
+  assert.equal(sanitizeDisplayName('  Jari Rautavuori  '), 'Jari Rautavuori')
+  assert.equal(sanitizeDisplayName('jari-rautavuori'), 'jari-rautavuori')
+  assert.throws(() => sanitizeDisplayName('!!'), /3-18/i)
+  assert.throws(() => sanitizeDisplayName('a'.repeat(19)), /3-18/i)
+  assert.throws(() => sanitizeDisplayName('bad/name'), /letters, numbers, spaces, underscores, or hyphens/i)
+})
+
+test('Display names can be normalized for stable comparisons', () => {
+  assert.equal(canonicalDisplayName('  Jari   Rautavuori  '), 'jari rautavuori')
+  assert.equal(canonicalDisplayName('jari-rautavuori'), 'jari-rautavuori')
 })

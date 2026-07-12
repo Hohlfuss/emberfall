@@ -97,6 +97,10 @@ export function useGame() {
   const authError = ref('')
   const authLoading = ref(false)
   const authToken = ref('')
+  const displayNameRequired = ref(false)
+  const displayNameDraft = ref('')
+  const displayNameError = ref('')
+  const displayNameLoading = ref(false)
   const serverOnline = ref(false)
   const backendError = ref('Connecting to the Emberfall server...')
   const actionError = ref('')
@@ -466,6 +470,9 @@ export function useGame() {
         body: JSON.stringify({ username, password: authPassword.value }),
       })
       const result = await readJson<{ token: string; state: ServerState; offlineProgress?: OfflineProgress }>(response)
+      displayNameRequired.value = false
+      displayNameError.value = ''
+      displayNameDraft.value = ''
       authToken.value = result.token
       offlineProgress.value = authMode.value === 'login' ? result.offlineProgress || null : null
       result.state.events.forEach(event => seenEventIds.add(event.id))
@@ -487,7 +494,7 @@ export function useGame() {
     try {
       if (!config.value) await loadConfig()
       seenEventIds.clear()
-      const result = await readJson<{ token: string; state: ServerState; offlineProgress?: OfflineProgress }>(
+      const result = await readJson<{ token: string; state?: ServerState; offlineProgress?: OfflineProgress; needsDisplayName?: boolean }>(
         await fetch(apiUrl('/api/auth/google'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -495,7 +502,45 @@ export function useGame() {
         }),
       )
       authToken.value = result.token
+      displayNameRequired.value = Boolean(result.needsDisplayName)
+      displayNameError.value = ''
+      displayNameDraft.value = ''
+      if (displayNameRequired.value) {
+        state.value = null
+        gameId.value = ''
+        offlineProgress.value = null
+        return
+      }
       offlineProgress.value = result.offlineProgress || null
+      if (result.state) {
+        result.state.events.forEach(event => seenEventIds.add(event.id))
+        applyServerState(result.state)
+        startPolling()
+        void loadChat()
+        void loadAuction()
+        clearInterval(chatTimer)
+        chatTimer = setInterval(loadChat, 2000)
+      }
+    } catch (error) {
+      authError.value = error instanceof Error ? error.message : 'Google sign-in failed.'
+    } finally {
+      authLoading.value = false
+    }
+  }
+
+  async function submitDisplayName() {
+    const draft = displayNameDraft.value.trim()
+    if (!serverOnline.value || !draft || displayNameLoading.value || !authToken.value) return
+    displayNameLoading.value = true
+    displayNameError.value = ''
+    try {
+      const result = await readJson<{ state: ServerState; displayName: string }>(await fetch(apiUrl('/api/auth/display-name'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken.value}` },
+        body: JSON.stringify({ displayName: draft }),
+      }))
+      displayNameRequired.value = false
+      displayNameDraft.value = result.displayName
       result.state.events.forEach(event => seenEventIds.add(event.id))
       applyServerState(result.state)
       startPolling()
@@ -504,9 +549,9 @@ export function useGame() {
       clearInterval(chatTimer)
       chatTimer = setInterval(loadChat, 2000)
     } catch (error) {
-      authError.value = error instanceof Error ? error.message : 'Google sign-in failed.'
+      displayNameError.value = error instanceof Error ? error.message : 'Could not save display name.'
     } finally {
-      authLoading.value = false
+      displayNameLoading.value = false
     }
   }
 
@@ -602,6 +647,7 @@ export function useGame() {
     chatMessages, chatOnline, chatError,
     auctionListings, auctionError, offlineProgress,
     professionStats, professionXpNeeded, isUnlocked, effectiveDuration, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip,
-    submitAuth, switchAuthMode, loginWithGoogle, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
+    submitAuth, switchAuthMode, loginWithGoogle, submitDisplayName, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
+    displayNameRequired, displayNameDraft, displayNameError, displayNameLoading,
   }
 }
