@@ -44,6 +44,7 @@ type ServerState = {
   nextGearIds: string[]; achievements: Achievement[]; events: GameEvent[]
   alliedFaction: FactionId | null; factions: Record<FactionId, { reputation: number; rank: number }>
   dailyObjectives: Array<{ id: string; label: string; target: number; reward: number; icon: string; progress: number; completed: boolean }>; dailyResetAt: number
+  metalDetector: MetalDetectorState
 }
 type Toast = { id: number; kind: GameEvent['kind']; title: string; detail: string }
 type LeaderboardCategory = 'level' | 'gold' | 'woodcutting' | 'mining' | 'clicks' | 'kills' | 'gathered' | 'crafted'
@@ -55,6 +56,21 @@ type LeaderboardEntry = {
 }
 export type ChatMessage = { id: string; username: string; name: string; message: string; createdAt: string }
 export type AuctionListing = { id: string; seller_username: string; seller_name: string; item_name: string; quantity: number; price: number; created_at: string }
+export type DetectorReward = { kind: 'empty' | 'gold' | 'material' | 'rare' | 'gear'; label: string; detail: string; icon: string }
+export type MetalDetectorState = {
+  unlocked: boolean
+  charges: number
+  maxCharges: number
+  rechargeMs: number
+  nextChargeIn: number
+  depth: number
+  investment: number
+  emptyChance: number
+  jackpotChance: number
+  site: number
+  tiles: Array<{ id: number; revealed: boolean; reward: DetectorReward | null }>
+  drilling: null | { gold: number; goldRemaining: number; startDepth: number; targetDepth: number; progress: number; remaining: number }
+}
 export type OfflineProgress = {
   durationMs: number; gold: number; xp: number; levels: number; kills: number; gathered: number; crafted: number
   items: Array<{ item: string; quantity: number }>
@@ -70,7 +86,7 @@ function apiUrl(path: string): string {
 }
 
 export function useGame() {
-  const tabs: Page[] = ['battle', 'woodcutting', 'mining', 'crafting', 'workers', 'inventory', 'achievements', 'factions', 'auction', 'high scores', 'shop']
+  const allTabs: Page[] = ['battle', 'woodcutting', 'mining', 'crafting', 'metal detector', 'workers', 'inventory', 'achievements', 'factions', 'auction', 'high scores', 'shop']
   const page = ref<Page>('battle')
   const authMode = ref<'login' | 'register'>('login')
   const authUsername = ref('')
@@ -84,6 +100,7 @@ export function useGame() {
   const actionError = ref('')
   const gameId = ref('')
   const state = ref<ServerState | null>(null)
+  const tabs = computed(() => allTabs.filter(tab => tab !== 'metal detector' || state.value?.metalDetector.unlocked))
   const config = ref<GameConfig | null>(null)
   const toasts = ref<Toast[]>([])
   const leaderboardCategory = ref<LeaderboardCategory>('woodcutting')
@@ -175,6 +192,12 @@ export function useGame() {
   const craftingStats = computed(() => state.value?.craftingStats || { speed: 0, conservationChance: 0, bonusOutputChance: 0, totalCrafts: 0, materialsSaved: 0, bonusOutputs: 0 })
   const craftingId = computed(() => state.value?.crafting?.id || '')
   const recipeLevels = computed(() => state.value?.recipeLevels || {})
+  const metalDetector = computed<MetalDetectorState>(() => state.value?.metalDetector || {
+    unlocked: false, charges: 0, maxCharges: 10, rechargeMs: 600_000, nextChargeIn: 0,
+    depth: 0, investment: 0, emptyChance: 78, jackpotChance: .33, site: 1,
+    tiles: Array.from({ length: 16 }, (_, id) => ({ id, revealed: false, reward: null })),
+    drilling: null,
+  })
 
   function professionStats(skill: Skill): ProfessionStats {
     const stats = state.value?.professionStats[skill]
@@ -493,6 +516,9 @@ export function useGame() {
   function sellItem(item: string, quantity: number) { void sendAction({ type: 'sellItem', item, quantity }) }
   function sellGear(gearId: string) { void sendAction({ type: 'sellGear', gearId }) }
   function allyFaction(factionId: FactionId) { void sendAction({ type: 'allyFaction', factionId }) }
+  function revealDetectorTile(tileId: number) { void sendAction({ type: 'revealDetectorTile', tileId }) }
+  function startDetectorDrill(gold: number) { void sendAction({ type: 'startDetectorDrill', gold }) }
+  function newDetectorSite() { void sendAction({ type: 'newDetectorSite' }) }
 
   onMounted(() => {
     void connectBackend()
@@ -509,12 +535,12 @@ export function useGame() {
     enemyTier, highestEnemyTier, enemy, battleStarted, autoBattle, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
     heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
     woods, rocks, allResources, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, sellPrices, resourceMastery,
-    workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId, craftingProfession, craftingStats, factionDefinitions, alliedFaction, factions, dailyObjectives, dailyResetAt,
+    workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId, craftingProfession, craftingStats, factionDefinitions, alliedFaction, factions, dailyObjectives, dailyResetAt, metalDetector,
     craftingRecipes, recipeLevels, storeListings, materialGroups, toasts,
     leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
     chatMessages, chatOnline, chatError,
     auctionListings, auctionError, offlineProgress,
     professionStats, professionXpNeeded, isUnlocked, effectiveDuration, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip,
-    submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
+    submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
   }
 }

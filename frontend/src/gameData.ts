@@ -1,4 +1,4 @@
-export type Page = 'battle' | 'woodcutting' | 'mining' | 'crafting' | 'workers' | 'inventory' | 'achievements' | 'factions' | 'auction' | 'high scores' | 'shop'
+export type Page = 'battle' | 'woodcutting' | 'mining' | 'crafting' | 'metal detector' | 'workers' | 'inventory' | 'achievements' | 'factions' | 'auction' | 'high scores' | 'shop'
 export type Skill = 'woodcutting' | 'mining'
 export type GearSlot = 'weapon' | 'helmet' | 'chest' | 'legs' | 'boots' | 'gloves' | 'ring' | 'amulet' | 'pickaxe' | 'hatchet'
 export type ProfessionStats = { speed: number; bonusYieldPercent: number; critChance: number; critPower: number }

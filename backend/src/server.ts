@@ -5,6 +5,10 @@ import {
   type Bonuses, type GearSlot, type ProfessionStats, type Recipe, type Resource, type Skill,
 } from '../../frontend/src/gameData.ts'
 import { rollGatherYield } from './gathering.ts'
+import {
+  DETECTOR_DRILL_MS, DETECTOR_MAX_CHARGES, DETECTOR_RECHARGE_MS,
+  detectorDepthGain, detectorEmptyChance, detectorJackpotChance, detectorRewardScale, rechargeDetectorCharges,
+} from './detector.ts'
 import { supabase } from "../supabase.ts";
 
 const leaderboardCategories = {
@@ -71,6 +75,11 @@ type FactionProgress = { reputation: number; rank: number }
 type DailyMetric = 'kills' | 'gathered' | 'crafted' | 'actions' | 'goldEarned'
 type DailyState = { date: string; baseline: Record<DailyMetric, number>; completed: string[] }
 type ProgressSnapshot = { at: number; gold: number; xp: number; level: number; kills: number; gathered: number; crafted: number; inventory: Record<string, number>; ownedGear: string[] }
+type DetectorRewardKind = 'empty' | 'gold' | 'material' | 'rare' | 'gear'
+type DetectorReward = { kind: DetectorRewardKind; label: string; detail: string; icon: string }
+type DetectorTile = { id: number; revealed: boolean; reward: DetectorReward | null }
+type DetectorDrill = { startedAt: number; endsAt: number; gold: number; startDepth: number; targetDepth: number }
+type MetalDetector = { unlocked: boolean; charges: number; chargeUpdatedAt: number; depth: number; investment: number; tiles: DetectorTile[]; site: number; drilling: DetectorDrill | null }
 
 type Game = {
   id: string
@@ -112,6 +121,7 @@ type Game = {
   alliedFaction: FactionId | null
   factions: Record<FactionId, FactionProgress>
   daily: DailyState
+  metalDetector: MetalDetector
   progressSnapshot?: ProgressSnapshot
 }
 
@@ -148,6 +158,9 @@ type Action =
   | { type: 'sellItem'; item: string; quantity: number }
   | { type: 'sellGear'; gearId: string }
   | { type: 'allyFaction'; factionId: FactionId }
+  | { type: 'revealDetectorTile'; tileId: number }
+  | { type: 'startDetectorDrill'; gold: number }
+  | { type: 'newDetectorSite' }
 
 const factionDefinitions = [
   { id: 'wardens', name: 'Verdant Wardens', icon: '🌿', unlockLevel: 3, description: 'Protectors of ancient forests. Reputation comes from woodcutting.', ranks: [50, 175, 450, 900], rewards: ['+5% woodcutting speed', '+20% woodcutting bonus yield', '+5% woodcutting crit chance', '+15% woodcutting speed'] },
@@ -263,6 +276,41 @@ function serializeGame(game: Game): StoredGame {
   }
 }
 
+function createDetectorTiles(): DetectorTile[] {
+  return Array.from({ length: 16 }, (_, id) => ({ id, revealed: false, reward: null }))
+}
+
+function createMetalDetector(now: number, unlocked = false): MetalDetector {
+  return {
+    unlocked,
+    charges: DETECTOR_MAX_CHARGES,
+    chargeUpdatedAt: now,
+    depth: 0,
+    investment: 0,
+    tiles: createDetectorTiles(),
+    site: 1,
+    drilling: null,
+  }
+}
+
+function normalizeMetalDetector(value: Partial<MetalDetector> | undefined, now: number, unlocked: boolean): MetalDetector {
+  const fallback = createMetalDetector(now, unlocked)
+  const storedTiles = Array.isArray(value?.tiles) ? value.tiles : []
+  return {
+    unlocked: value?.unlocked ?? unlocked,
+    charges: Math.min(DETECTOR_MAX_CHARGES, Math.max(0, Math.floor(value?.charges ?? fallback.charges))),
+    chargeUpdatedAt: Number.isFinite(value?.chargeUpdatedAt) ? Number(value?.chargeUpdatedAt) : now,
+    depth: Math.max(0, Math.floor(value?.depth ?? 0)),
+    investment: Math.max(0, Math.floor(value?.investment ?? (value?.depth ?? 0) ** 2)),
+    tiles: fallback.tiles.map(tile => {
+      const stored = storedTiles.find(candidate => candidate?.id === tile.id)
+      return stored ? { id: tile.id, revealed: Boolean(stored.revealed), reward: stored.reward ?? null } : tile
+    }),
+    site: Math.max(1, Math.floor(value?.site ?? 1)),
+    drilling: value?.drilling ?? null,
+  }
+}
+
 function normalizeLegacyTerminology(text: string) {
   return text
     .replaceAll('Quick harvest', 'Critical harvest')
@@ -273,6 +321,7 @@ function normalizeLegacyTerminology(text: string) {
 
 function deserializeGame(value: unknown): Game {
   const stored = value as StoredGame
+  const storedAt = stored.lastAdvancedAt ?? Date.now()
   const expectedLevelRewards = levelWorkerRewardCount(stored.level ?? 1)
   const recordedLevelRewards = stored.levelRewardWorkers ?? legacyLevelWorkerRewardCount(stored.level ?? 1)
   const missingLevelRewards = Math.max(0, expectedLevelRewards - recordedLevelRewards)
@@ -298,6 +347,7 @@ function deserializeGame(value: unknown): Game {
     alliedFaction: stored.alliedFaction ?? null,
     factions: stored.factions ?? { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } },
     daily: stored.daily ?? createDailyState(stored.lifetime ?? createLifetimeStats()),
+    metalDetector: normalizeMetalDetector(stored.metalDetector, storedAt, (stored.highestEnemyTier ?? 1) >= 4),
     workers: Math.max(stored.workers ?? 0, recordedLevelRewards) + missingLevelRewards,
     levelRewardWorkers: expectedLevelRewards,
     player: {
@@ -478,6 +528,79 @@ function pushEvent(game: Game, kind: EventKind, title: string, detail: string) {
   if (game.events.length > 50) game.events.splice(0, game.events.length - 50)
 }
 
+function advanceMetalDetector(game: Game, now: number) {
+  const detector = game.metalDetector
+  const recharged = rechargeDetectorCharges(detector.charges, detector.chargeUpdatedAt, now)
+  detector.charges = recharged.charges
+  detector.chargeUpdatedAt = recharged.chargeUpdatedAt
+
+  if (detector.drilling && now >= detector.drilling.endsAt) {
+    const completed = detector.drilling
+    detector.depth = completed.targetDepth
+    detector.drilling = null
+    game.message = `The detector reached ${detector.depth}m depth. Better signals can now be found.`
+    pushEvent(game, 'level', `Detector depth ${detector.depth}m`, `${completed.gold.toLocaleString()} gold drilled · reward quality improved`)
+  }
+}
+
+function randomEntry<T>(values: readonly T[]): T | undefined {
+  return values[Math.floor(Math.random() * values.length)]
+}
+
+function addDetectorItem(game: Game, item: string, amount: number) {
+  game.inventory[item] = (game.inventory[item] || 0) + amount
+}
+
+function rollDetectorReward(game: Game): DetectorReward {
+  const depth = game.metalDetector.depth
+  if (Math.random() < detectorEmptyChance(depth)) {
+    return { kind: 'empty', label: 'Empty ground', detail: 'Only stone, soil, and rust.', icon: '·' }
+  }
+
+  const scale = detectorRewardScale(depth)
+  if (Math.random() < detectorJackpotChance(depth)) {
+    const unownedGear = Object.values(gearCatalog).filter(gear => !game.ownedGear.includes(gear.id))
+    const gear = Math.random() < .45 ? randomEntry(unownedGear) : undefined
+    if (gear) {
+      game.ownedGear.push(gear.id)
+      if (!game.unlockedGear.includes(gear.id)) game.unlockedGear.push(gear.id)
+      pushEvent(game, 'rare', 'Buried jackpot!', `${gear.icon} ${gear.name} recovered at ${depth}m`)
+      return { kind: 'gear', label: gear.name, detail: `Jackpot equipment · tier ${gear.tier}`, icon: gear.icon }
+    }
+    const amount = Math.max(50, Math.round((75 + Math.random() * 225) * scale))
+    giveGold(game, amount)
+    pushEvent(game, 'rare', 'Buried jackpot!', `${amount.toLocaleString()} gold recovered at ${depth}m`)
+    return { kind: 'gold', label: `${amount.toLocaleString()} gold`, detail: 'Jackpot cache', icon: '◈' }
+  }
+
+  const category = Math.random()
+  if (category < .28) {
+    const amount = Math.max(1, Math.round((2 + Math.random() * 7) * Math.sqrt(scale)))
+    giveGold(game, amount)
+    return { kind: 'gold', label: `${amount.toLocaleString()} gold`, detail: 'A small buried purse', icon: '◈' }
+  }
+
+  if (category < .76) {
+    const resource = randomEntry(allResources)!
+    const amount = Math.max(1, Math.floor((1 + Math.random()) * Math.sqrt(scale)))
+    addDetectorItem(game, resource.item, amount)
+    return { kind: 'material', label: `${amount} × ${resource.item}`, detail: `Random ${resource.family} material`, icon: resource.icon }
+  }
+
+  if (category < .94) {
+    const recipe = randomEntry(recipeData.filter(candidate => candidate.outputItem))!
+    const amount = Math.max(1, Math.floor(Math.sqrt(scale)))
+    addDetectorItem(game, recipe.outputItem!, amount)
+    return { kind: 'material', label: `${amount} × ${recipe.outputItem}`, detail: 'Buried crafted material', icon: '◆' }
+  }
+
+  const rare = randomEntry(['Ancient Resin', 'Ore Crystal', 'Rough Gem'] as const)!
+  const amount = 1 + Math.floor(depth / 150)
+  addDetectorItem(game, rare, amount)
+  pushEvent(game, 'rare', 'Rare detector signal!', `${amount} × ${rare} recovered at ${depth}m`)
+  return { kind: 'rare', label: `${amount} × ${rare}`, detail: 'Rare buried material', icon: '✦' }
+}
+
 function achievementProgress(game: Game, achievement: AchievementDefinition) {
   const values: Record<AchievementKind, number> = {
     level: game.level, kills: game.lifetime.kills, deaths: game.lifetime.deaths, tier: game.highestEnemyTier,
@@ -655,6 +778,13 @@ function finishVictory(game: Game, now: number) {
       if (chatMessages.length > CHAT_LIMIT) chatMessages.splice(0, chatMessages.length - CHAT_LIMIT)
     }
   }
+  if (game.enemyTier === 3 && !game.metalDetector.unlocked) {
+    game.metalDetector.unlocked = true
+    game.metalDetector.charges = DETECTOR_MAX_CHARGES
+    game.metalDetector.chargeUpdatedAt = now
+    game.message = 'The defeated enemy dropped a battered metal detector!'
+    pushEvent(game, 'achievement', 'Metal detector found!', 'A new activity has appeared · starts with 10 charges')
+  }
   if (game.enemyTier === game.highestEnemyTier && game.highestEnemyTier < 25) game.highestEnemyTier++
   stopBattle(game)
   gainXp(game, rewardXp)
@@ -695,6 +825,7 @@ function advanceGame(game: Game, now = Date.now()) {
   syncDailyObjectives(game, now)
   const elapsed = Math.max(0, now - game.lastAdvancedAt)
   game.lastAdvancedAt = now
+  advanceMetalDetector(game, now)
 
   if (game.enemyLoad && now >= game.enemyLoad.endsAt) {
     game.enemyLoad = null
@@ -805,7 +936,7 @@ function createGame(name: string): Game {
     equipment: { weapon: 'rustySword', helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: 'crackedPickaxe', hatchet: 'wornHatchet' },
     professions: { woodcutting: { level: 1, xp: 0 }, mining: { level: 1, xp: 0 } }, craftingProfession: { level: 1, xp: 0 }, resourceMastery: {}, jobs: {},
     workerAssignments: {}, workerProgress: {}, workers: 0, levelRewardWorkers: 0, shopUpgrades: { medic: 0, scouting: 0, training: 0, fortitude: 0, autoBattle: 0 },
-    unlockedAchievements: new Set(), alliedFaction: null, factions: { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } }, daily: createDailyState(createLifetimeStats()),
+    unlockedAchievements: new Set(), alliedFaction: null, factions: { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } }, daily: createDailyState(createLifetimeStats()), metalDetector: createMetalDetector(now),
     lifetime: createLifetimeStats(),
     enemyTier: 1, highestEnemyTier: 1, enemy: { name: 'Loading...', archetype: '', health: 0, maxHealth: 1, attack: 0, defense: 0, attackSpeed: 0, xp: 0, gold: 0 },
     battleActive: false, autoBattle: false, nextPlayerAttackAt: 0, nextEnemyAttackAt: 0, recovery: null, enemyLoad: null, crafting: null,
@@ -986,6 +1117,51 @@ function performAction(game: Game, action: Action, now: number) {
       game.message = `You are now allied with ${definition.name}.`
       break
     }
+    case 'revealDetectorTile': {
+      const detector = game.metalDetector
+      if (!detector.unlocked) reject('Defeat a tier 3 enemy to find the metal detector.')
+      if (detector.drilling) reject('The detector is busy drilling to a new depth.')
+      if (!Number.isInteger(action.tileId) || action.tileId < 0 || action.tileId >= detector.tiles.length) reject('Unknown detector tile.')
+      const tile = detector.tiles[action.tileId]!
+      if (tile.revealed) reject('That tile has already been uncovered.')
+      if (detector.charges < 1) reject('The metal detector is out of charges.')
+      const wasFull = detector.charges === DETECTOR_MAX_CHARGES
+      detector.charges--
+      if (wasFull) detector.chargeUpdatedAt = now
+      tile.reward = rollDetectorReward(game)
+      tile.revealed = true
+      game.message = tile.reward.kind === 'empty'
+        ? `Detector site ${detector.site}: the signal revealed empty ground.`
+        : `Detector find: ${tile.reward.label}.`
+      break
+    }
+    case 'startDetectorDrill': {
+      const detector = game.metalDetector
+      if (!detector.unlocked) reject('Defeat a tier 3 enemy to find the metal detector.')
+      if (detector.drilling) reject('The depth drill is already running.')
+      if (!Number.isFinite(action.gold) || !Number.isInteger(action.gold) || action.gold < 1) reject('Choose a whole amount of gold to drill.')
+      if (action.gold > game.gold) reject('You do not have that much gold.')
+      const gain = detectorDepthGain(action.gold, detector.investment)
+      if (gain < 1) reject('Commit enough gold to reach at least one new meter of depth.')
+      spendGold(game, action.gold)
+      detector.investment += action.gold
+      detector.drilling = {
+        startedAt: now,
+        endsAt: now + DETECTOR_DRILL_MS,
+        gold: action.gold,
+        startDepth: detector.depth,
+        targetDepth: detector.depth + gain,
+      }
+      game.message = `Depth drill started with ${action.gold.toLocaleString()} gold. Reaching ${detector.depth + gain}m in 10 seconds.`
+      break
+    }
+    case 'newDetectorSite':
+      if (!game.metalDetector.unlocked) reject('The metal detector has not been found yet.')
+      if (!game.metalDetector.tiles.every(tile => tile.revealed)) reject('Uncover every tile before moving to a new site.')
+      game.metalDetector.tiles = createDetectorTiles()
+      game.metalDetector.site++
+      game.message = `Detector site ${game.metalDetector.site} is ready to scan.`
+      break
     default:
       reject('Unknown action.')
   }
@@ -1020,6 +1196,15 @@ function publicState(game: Game, now = Date.now()) {
     progress: Math.min(100, Math.max(0, (now - game.crafting.startedAt) / (game.crafting.endsAt - game.crafting.startedAt) * 100)),
     remaining: Math.max(0, (game.crafting.endsAt - now) / 1000),
   } : null
+  const detectorDrilling = game.metalDetector.drilling ? {
+    ...game.metalDetector.drilling,
+    progress: Math.min(100, Math.max(0, (now - game.metalDetector.drilling.startedAt) / (game.metalDetector.drilling.endsAt - game.metalDetector.drilling.startedAt) * 100)),
+    remaining: Math.max(0, game.metalDetector.drilling.endsAt - now),
+    goldRemaining: Math.max(0, Math.ceil(game.metalDetector.drilling.gold * (game.metalDetector.drilling.endsAt - now) / (game.metalDetector.drilling.endsAt - game.metalDetector.drilling.startedAt))),
+  } : null
+  const nextDetectorChargeIn = game.metalDetector.charges >= DETECTOR_MAX_CHARGES
+    ? 0
+    : Math.max(0, DETECTOR_RECHARGE_MS - (now - game.metalDetector.chargeUpdatedAt))
   return {
     id: game.id, revision: game.revision, serverNow: now, playerName: game.name, gold: game.gold, level: game.level, xp: game.xp, xpNeeded: xpNeeded(game), message: game.message,
     player: { health: game.player.health }, combatStats: stats,
@@ -1052,6 +1237,15 @@ function publicState(game: Game, now = Date.now()) {
     dailyResetAt: Date.parse(`${game.daily.date}T00:00:00Z`) + 86_400_000,
     shopUpgradeCosts: Object.fromEntries(shopUpgradeDetails.map(upgrade => [upgrade.id, shopUpgradeCost(game, upgrade)])),
     crafting, nextGearIds: nextGearIds(game),
+    metalDetector: {
+      ...game.metalDetector,
+      maxCharges: DETECTOR_MAX_CHARGES,
+      rechargeMs: DETECTOR_RECHARGE_MS,
+      nextChargeIn: nextDetectorChargeIn,
+      emptyChance: detectorEmptyChance(game.metalDetector.depth) * 100,
+      jackpotChance: (1 - detectorEmptyChance(game.metalDetector.depth)) * detectorJackpotChance(game.metalDetector.depth) * 100,
+      drilling: detectorDrilling,
+    },
     achievements: achievementDefinitions.map(achievement => ({ ...achievement, reward: Math.max(10, Math.round(achievement.reward * .35)), progress: achievementProgress(game, achievement), unlocked: game.unlockedAchievements.has(achievement.id) })),
     events: game.events,
   }
