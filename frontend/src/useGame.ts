@@ -20,6 +20,7 @@ type GameConfig = {
   storePaths: StorePath[]
   shopUpgradeDetails: ShopUpgradeDetail[]
   factionDefinitions: FactionDefinition[]
+  googleClientId: string
 }
 type ServerState = {
   id: string; revision: number; serverNow: number; playerName: string; playerTitle: string; gold: number; level: number; xp: number; xpNeeded: number; message: string
@@ -79,7 +80,7 @@ export type OfflineProgress = {
 }
 
 const API_URL = (
-  import.meta.env.VITE_API_URL || 'http://localhost:3000'
+  import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:3000' : window.location.origin)
 ).replace(/\/$/, '')
 
 function apiUrl(path: string): string {
@@ -171,6 +172,7 @@ export function useGame() {
   const gearSlots = computed(() => Object.keys(slotLabels.value) as GearSlot[])
   const storePaths = computed(() => config.value?.storePaths || [])
   const shopUpgradeDetails = computed(() => config.value?.shopUpgradeDetails || [])
+  const googleClientId = computed(() => config.value?.googleClientId || '')
   const professions = computed(() => state.value?.professions || { woodcutting: { level: 1, xp: 0, xpNeeded: 61 }, mining: { level: 1, xp: 0, xpNeeded: 61 } })
   const jobs = computed(() => state.value?.jobs || {})
   const inventory = computed(() => state.value?.inventory || {})
@@ -477,6 +479,37 @@ export function useGame() {
       authError.value = error instanceof Error ? error.message : 'Authentication failed.'
     } finally { authLoading.value = false }
   }
+
+  async function loginWithGoogle(credential: string) {
+    if (!serverOnline.value || !credential || authLoading.value) return
+    authLoading.value = true
+    authError.value = ''
+    try {
+      if (!config.value) await loadConfig()
+      seenEventIds.clear()
+      const result = await readJson<{ token: string; state: ServerState; offlineProgress?: OfflineProgress }>(
+        await fetch(apiUrl('/api/auth/google'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ credential }),
+        }),
+      )
+      authToken.value = result.token
+      offlineProgress.value = result.offlineProgress || null
+      result.state.events.forEach(event => seenEventIds.add(event.id))
+      applyServerState(result.state)
+      startPolling()
+      void loadChat()
+      void loadAuction()
+      clearInterval(chatTimer)
+      chatTimer = setInterval(loadChat, 2000)
+    } catch (error) {
+      authError.value = error instanceof Error ? error.message : 'Google sign-in failed.'
+    } finally {
+      authLoading.value = false
+    }
+  }
+
   async function pollState() {
     if (!gameId.value || requestRunning) return
     requestRunning = true
@@ -562,13 +595,13 @@ export function useGame() {
     tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authLoading, serverOnline, backendError, playerName, playerTitle, gold, level, xp, xpNeeded, message, player, combatStats, dps,
     enemyTier, highestEnemyTier, enemy, battleStarted, autoBattle, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
     heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
-    woods, rocks, allResources, rareMaterials, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, sellPrices, resourceMastery,
+    woods, rocks, allResources, rareMaterials, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, googleClientId, professions, jobs, inventory, sellPrices, resourceMastery,
     workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId, craftingProfession, craftingStats, factionDefinitions, alliedFaction, factions, dailyObjectives, dailyResetAt, metalDetector,
     craftingRecipes, recipeLevels, storeListings, materialGroups, toasts,
     leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
     chatMessages, chatOnline, chatError,
     auctionListings, auctionError, offlineProgress,
     professionStats, professionXpNeeded, isUnlocked, effectiveDuration, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip,
-    submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
+    submitAuth, switchAuthMode, loginWithGoogle, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
   }
 }

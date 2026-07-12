@@ -12,9 +12,10 @@ import FactionsPage from './FactionsPage.vue'
 import DailyObjectives from './DailyObjectives.vue'
 import MetalDetectorPage from './MetalDetectorPage.vue'
 import GameTutorial from './GameTutorial.vue'
+import GoogleLoginButton from './GoogleLoginButton.vue'
 
 const {
-  tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authLoading, serverOnline, backendError, playerName, playerTitle, gold, level, xp, xpNeeded, message, player, combatStats, dps,
+  tabs, page, authError, authLoading, serverOnline, backendError, googleClientId, playerName, playerTitle, gold, level, xp, xpNeeded, message, player, combatStats, dps,
   enemyTier, highestEnemyTier, enemy, battleStarted, autoBattle, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
   heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
   woods, rocks, allResources, rareMaterials, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, sellPrices, resourceMastery,
@@ -27,7 +28,7 @@ const {
   chatMessages, chatOnline, chatError,
   auctionListings, auctionError, offlineProgress,
   professionStats, professionXpNeeded, isUnlocked, effectiveDuration, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip,
-  submitAuth, switchAuthMode, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
+  loginWithGoogle, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
 } = useGame()
 
 const craftingRecipeId = ref('')
@@ -61,7 +62,7 @@ watch(playerName, name => {
 </script>
 
 <template>
-  <div v-if="!playerName" class="name-screen"><form class="name-card auth-card" @submit.prevent="submitAuth"><div class="crest">E</div><p class="eyebrow">WELCOME TO EMBERFALL</p><h1>{{ authMode === 'login' ? 'Welcome back' : 'Create account' }}</h1><p>{{ authMode === 'login' ? 'Return to your adventure.' : 'Create your hero and begin a new tale.' }}</p><div class="auth-tabs"><button type="button" :class="{ selected: authMode === 'login' }" @click="switchAuthMode('login')">LOGIN</button><button type="button" :class="{ selected: authMode === 'register' }" @click="switchAuthMode('register')">REGISTER</button></div><input v-model="authUsername" maxlength="18" placeholder="Username" autocomplete="username" required><input v-model="authPassword" type="password" minlength="8" placeholder="Password (8+ characters)" :autocomplete="authMode === 'login' ? 'current-password' : 'new-password'" required><input v-if="authMode === 'register'" v-model="authConfirmPassword" type="password" minlength="8" placeholder="Confirm password" autocomplete="new-password" required><p v-if="authError" class="auth-error" role="alert">{{ authError }}</p><p v-if="!serverOnline" class="auth-error" role="status">{{ backendError }}</p><button class="primary" :disabled="!serverOnline || authLoading || !authUsername.trim() || authPassword.length < 8 || (authMode === 'register' && authConfirmPassword !== authPassword)">{{ authLoading ? 'PLEASE WAIT…' : authMode === 'login' ? 'ENTER EMBERFALL' : 'CREATE HERO' }}</button></form></div>
+  <div v-if="!playerName" class="name-screen"><section class="name-card auth-card"><div class="crest">E</div><p class="eyebrow">WELCOME TO EMBERFALL</p><h1>Enter Emberfall</h1><p>Continue with Google to create your hero or return to your adventure.</p><GoogleLoginButton v-if="googleClientId" :client-id="googleClientId" :disabled="authLoading || !serverOnline" @credential="loginWithGoogle" @error="authError = $event" /><p v-else-if="serverOnline" class="auth-error" role="status">Google login is not configured.</p><p v-if="authLoading" class="auth-status" role="status">VERIFYING GOOGLE ACCOUNT…</p><p v-if="authError" class="auth-error" role="alert">{{ authError }}</p><p v-if="!serverOnline" class="auth-error" role="status">{{ backendError }}</p></section></div>
   <main v-else class="game-shell" :class="{ 'high-scores-open': page === 'high scores', 'auction-open': page === 'auction', 'factions-open': page === 'factions' }">
     <div v-if="!serverOnline" class="backend-offline"><strong>SERVER OFFLINE</strong><span>{{ backendError }}</span></div>
     <header class="topbar"><div class="brand"><span class="brand-mark">E</span><span>EMBERFALL</span></div><div class="xp-area"><div class="xp-copy"><span>LEVEL {{ level }}</span><strong>{{ xp }} / {{ xpNeeded }} XP</strong></div><div class="xp-bar"><i :style="{ width: xpPercent }"></i></div></div><div class="wallet"><button type="button" class="tutorial-open" title="Open game tutorial" aria-label="Open game tutorial" @click="tutorialOpen = true">?</button> ◈ {{ gold.toLocaleString() }} <span>GOLD</span></div></header>

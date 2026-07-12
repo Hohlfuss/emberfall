@@ -1,1 +1,56 @@
-# emberfall
+# Emberfall
+
+## Deploy to Render
+
+The repository is configured as one Render web service. Render builds the Vue frontend, then the Express backend serves both the website and `/api` from the same origin. This avoids production CORS and `VITE_API_URL` configuration.
+
+### 1. Prepare Supabase
+
+Run these files in the Supabase SQL editor:
+
+1. The original players and leaderboard schema used by the game.
+2. `backend/google-oauth-schema.sql`.
+3. `backend/auction-schema.sql` if the auction house has not already been created.
+
+Use the Supabase **service role/secret key** on Render, not a browser publishable key. Never add that secret to `frontend/.env` or commit it.
+
+### 2. Create the Render service
+
+Push this repository to GitHub, then choose **New → Blueprint** in Render and select the repository. Render reads `render.yaml` and creates the `emberfall` Node web service.
+
+Enter these secret environment variables when Render asks:
+
+- `SUPABASE_URL` — Supabase project URL.
+- `SUPABASE_SECRET_KEY` — Supabase service role/secret key.
+- `GOOGLE_CLIENT_ID` — Google OAuth Web Client ID ending in `.apps.googleusercontent.com`.
+
+The Blueprint uses:
+
+- Build: `npm ci --prefix backend && npm ci --prefix frontend && npm run build --prefix frontend`
+- Start: `npm start --prefix backend`
+- Health check: `/api/health`
+- Node: 22.16.0
+
+If updating an existing Render service instead of creating a Blueprint, copy those settings into its dashboard and leave the root directory blank.
+
+### 3. Configure Google
+
+In Google Cloud Console, open the OAuth 2.0 **Web application** client and add the final Render URL to **Authorized JavaScript origins**, for example:
+
+`https://emberfall-fu56.onrender.com`
+
+Also keep `http://localhost:5173` for local development. Do not add paths or a trailing slash. This Google Identity Services flow does not need an authorized redirect URI or client secret.
+
+### 4. Verify production
+
+After deployment:
+
+- `https://YOUR-SERVICE.onrender.com/api/health` returns `{ "ok": true, ... }`.
+- `https://YOUR-SERVICE.onrender.com/api/config` contains a non-empty `googleClientId`.
+- `https://YOUR-SERVICE.onrender.com` displays the Google login button.
+
+The backend verifies each Google ID token for the configured client ID, requires a verified email, and identifies returning players by Google's stable account ID.
+
+## Local development
+
+Create `backend/.env` with `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, and `GOOGLE_CLIENT_ID`. Run `npm run dev` in both `backend` and `frontend`. The frontend defaults to `http://localhost:3000` while running in Vite development mode.

@@ -1,5 +1,7 @@
 import express from 'express'
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto'
+import { fileURLToPath } from 'node:url'
+import { OAuth2Client } from 'google-auth-library'
 import {
   allResources, GAME_PACE_MULTIPLIER, gearCatalog, rareMaterials, recipes as recipeData, rocks, slotLabels, woods,
   type Bonuses, type GearSlot, type ProfessionStats, type Recipe, type Resource, type Skill,
@@ -16,6 +18,7 @@ import {
   detectorDepthGain, detectorEmptyChance, detectorJackpotChance, detectorRewardScale, rechargeDetectorCharges,
 } from './detector.ts'
 import { supabase } from "../supabase.ts";
+import { googleUsernameCandidates, verifyGoogleCredential } from './googleAuth.ts'
 
 const leaderboardCategories = {
   level: {
@@ -57,6 +60,8 @@ type LeaderboardCategory =
 
 const app = express()
 const port = Number(process.env.PORT) || 3000
+const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim() || ''
+const googleOAuthClient = new OAuth2Client(googleClientId)
 app.use(express.json())
 app.use((request, response, next) => {
   response.setHeader('Access-Control-Allow-Origin', '*')
@@ -1360,7 +1365,7 @@ function captureOfflineProgress(game: Game, now: number): { state: ReturnType<ty
   }
 }
 
-const config = { woods, rocks, allResources, rareMaterials, gearCatalog, recipes: recipeData, slotLabels, storePaths, shopUpgradeDetails, factionDefinitions }
+const config = { woods, rocks, allResources, rareMaterials, gearCatalog, recipes: recipeData, slotLabels, storePaths, shopUpgradeDetails, factionDefinitions, googleClientId }
 
 function passwordHash(password: string, salt: string) {
   return scryptSync(password, salt, 64).toString('hex')
@@ -1428,6 +1433,92 @@ function spendGold(game: Game, amount: number): void {
 
 app.get('/api/health', (_request, response) => response.json({ ok: true, games: games.size }))
 app.get('/api/config', (_request, response) => response.json(config))
+
+app.post('/api/auth/google', async (request, response) => {
+  try {
+    if (!googleClientId) {
+      return response.status(503).json({ error: 'Google login is not configured on the server.' })
+    }
+
+    const credential = typeof request.body?.credential === 'string'
+      ? request.body.credential
+      : ''
+    if (!credential) {
+      return response.status(400).json({ error: 'Google credential is required.' })
+    }
+
+    const identity = await verifyGoogleCredential(credential, googleClientId, googleOAuthClient)
+    const existingResult = await supabase
+      .from('players')
+      .select('username, name, game_id, game_state')
+      .eq('google_sub', identity.subject)
+      .maybeSingle()
+
+    if (existingResult.error) throw existingResult.error
+
+    let playerRow = existingResult.data
+    let isNewPlayer = false
+    if (!playerRow) {
+      const candidates = googleUsernameCandidates(identity.email, identity.subject)
+      let username = ''
+      for (const candidate of candidates) {
+        const lookup = await supabase.from('players').select('username').eq('username', candidate).maybeSingle()
+        if (lookup.error) throw lookup.error
+        if (!lookup.data) {
+          username = candidate
+          break
+        }
+      }
+      if (!username) username = `google-${randomBytes(5).toString('hex')}`.slice(0, 18)
+
+      const game = createGame(identity.name)
+      const inserted = await supabase
+        .from('players')
+        .insert({
+          username,
+          name: identity.name,
+          google_sub: identity.subject,
+          google_email: identity.email,
+          salt: null,
+          password_hash: null,
+          game_id: game.id,
+          game_state: serializeGame(game),
+        })
+        .select('username, name, game_id, game_state')
+        .single()
+
+      if (inserted.error) {
+        games.delete(game.id)
+        throw inserted.error
+      }
+      playerRow = inserted.data
+      isNewPlayer = true
+    }
+
+    const game = deserializeGame(playerRow.game_state)
+    game.id = playerRow.game_id
+    game.name = playerRow.name
+    games.set(game.id, game)
+    gameOwners.set(game.id, playerRow.username)
+
+    const loginResult = isNewPlayer
+      ? { state: publicState(game) }
+      : captureOfflineProgress(game, Date.now())
+    await saveGame(playerRow.username, game)
+
+    return response.status(isNewPlayer ? 201 : 200).json({
+      token: issueToken(playerRow.username, game.id),
+      ...loginResult,
+    })
+  } catch (error) {
+    console.error('Google login error:', error)
+    const message = error instanceof Error ? error.message : ''
+    if (/token|credential|verified email|audience/i.test(message)) {
+      return response.status(401).json({ error: 'Google sign-in could not be verified.' })
+    }
+    return response.status(500).json({ error: 'Could not log in with Google.' })
+  }
+})
 
 app.post('/api/auth/register', async (request, response) => {
   try {
@@ -1828,6 +1919,12 @@ app.get(
     })
   },
 )
+
+const frontendDist = fileURLToPath(new URL('../../frontend/dist', import.meta.url))
+app.use(express.static(frontendDist))
+app.get(/^(?!\/api(?:\/|$)).*/, (_request, response) => {
+  response.sendFile('index.html', { root: frontendDist })
+})
 
 const tick = setInterval(() => {
   const now = Date.now()
