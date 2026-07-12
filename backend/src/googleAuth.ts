@@ -42,17 +42,18 @@ export async function verifyGoogleCredential(
 
 export function googleUsernameCandidates(email: string, subject: string): string[] {
   const localPart = email.split('@')[0]?.split('+')[0]?.toLowerCase() || ''
-  const base = localPart
-    .replace(/[^a-z0-9_.-]+/g, '')
-    .replace(/^[_.-]+|[_.-]+$/g, '')
+  const sanitized = localPart
+    .replace(/[^a-z0-9_-]+/g, '-').replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
     .slice(0, 18)
+  const base = sanitized || 'player'
   const suffixes = [subject.slice(-6), subject.slice(-12, -6)].filter(Boolean)
   if (base.length < 3) {
     const subjectChunks = [subject.slice(-6), subject.slice(0, 6)].filter(Boolean)
     return [...new Set(subjectChunks.map(chunk => `player-${chunk}`.slice(0, 18)))]
   }
 
-  const root = base
+  const root = base.replace(/[^a-z0-9_-]+/g, '').replace(/-+/g, '-')
   const candidates = [root]
 
   for (const suffix of suffixes) {
@@ -60,5 +61,5 @@ export function googleUsernameCandidates(email: string, subject: string): string
     candidates.push(`${prefix}-${suffix}`.slice(0, 18))
   }
 
-  return [...new Set(candidates)]
+  return [...new Set(candidates.map(candidate => candidate.toLowerCase()).filter(candidate => /^[a-z0-9_-]{3,18}$/.test(candidate)))]
 }

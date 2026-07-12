@@ -1465,14 +1465,20 @@ app.post('/api/auth/google', async (request, response) => {
       const candidates = googleUsernameCandidates(identity.email, identity.subject)
       let username = ''
       for (const candidate of candidates) {
-        const lookup = await supabase.from('players').select('username').eq('username', candidate).maybeSingle()
+        const normalizedCandidate = candidate.toLowerCase().replace(/[^a-z0-9_-]+/g, '').slice(0, 18)
+        if (!normalizedCandidate) continue
+        const lookup = await supabase.from('players').select('username').eq('username', normalizedCandidate).maybeSingle()
         if (lookup.error) throw lookup.error
         if (!lookup.data) {
-          username = candidate
+          username = normalizedCandidate
           break
         }
       }
       if (!username) username = `google-${randomBytes(5).toString('hex')}`.slice(0, 18)
+      username = username.toLowerCase().replace(/[^a-z0-9_-]+/g, '').slice(0, 18)
+      if (!/^[a-z0-9_-]{3,18}$/.test(username)) {
+        username = `google-${randomBytes(5).toString('hex')}`.slice(0, 18)
+      }
 
       const game = createGame(identity.name)
       const inserted = await supabase

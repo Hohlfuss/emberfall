@@ -51,10 +51,16 @@ test('unverified Google accounts are rejected', async () => {
 test('Google profiles produce valid deterministic username candidates', () => {
   assert.deepEqual(
     googleUsernameCandidates('Hero.Player+game@gmail.com', '109876543210987654321'),
-    ['hero.player', 'hero.player-654321', 'hero.player-210987'],
+    ['hero-player', 'hero-player-654321', 'hero-player-210987'],
   )
   assert.deepEqual(
     googleUsernameCandidates('!!!@gmail.com', '123456789'),
-    ['player-456789', 'player-123456'],
+    ['player', 'player-456789', 'player-123'],
   )
+})
+
+test('Google username candidates stay within the stored username rules', () => {
+  const candidates = googleUsernameCandidates('Jari.Rautavuori@gmail.com', '6789abcd')
+  assert.ok(candidates.every(candidate => /^[a-z0-9_-]{3,18}$/.test(candidate)))
+  assert.ok(candidates.every(candidate => !candidate.includes('.')))
 })
