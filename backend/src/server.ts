@@ -1,7 +1,10 @@
+import { config as loadEnv } from 'dotenv'
 import express from 'express'
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { OAuth2Client } from 'google-auth-library'
+
+loadEnv({ path: fileURLToPath(new URL('../.env', import.meta.url)) })
 import {
   allResources, GAME_PACE_MULTIPLIER, gearCatalog, rareMaterials, recipes as recipeData, rocks, slotLabels, woods,
   type Bonuses, type GearSlot, type ProfessionStats, type Recipe, type Resource, type Skill,
@@ -60,7 +63,7 @@ type LeaderboardCategory =
 
 const app = express()
 const port = Number(process.env.PORT) || 3000
-const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim() || ''
+const googleClientId = (process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '').trim()
 const googleOAuthClient = new OAuth2Client(googleClientId)
 app.use(express.json())
 app.use((request, response, next) => {
@@ -904,9 +907,9 @@ function advanceGame(game: Game, now = Date.now()) {
     }
   } else game.player.regenBuffer = 0
 
-  ;(['woodcutting', 'mining'] as Skill[]).forEach(skill => {
-    if (game.jobs[skill] && now >= game.jobs[skill]!.endsAt) completeGather(game, skill)
-  })
+    ; (['woodcutting', 'mining'] as Skill[]).forEach(skill => {
+      if (game.jobs[skill] && now >= game.jobs[skill]!.endsAt) completeGather(game, skill)
+    })
   if (game.crafting && now >= game.crafting.endsAt) completeCraft(game)
 
   allResources.forEach(resource => {
@@ -1908,7 +1911,7 @@ app.get(
       name: player.display_name,
       score:
         player[
-          leaderboard.column as keyof typeof player
+        leaderboard.column as keyof typeof player
         ],
     }))
 

@@ -1,5 +1,8 @@
-import 'dotenv/config'
+import { config as loadEnv } from 'dotenv'
+import { fileURLToPath } from 'node:url'
 import { createClient } from '@supabase/supabase-js'
+
+loadEnv({ path: fileURLToPath(new URL('../.env', import.meta.url)) })
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY
