@@ -10,6 +10,7 @@ const groups: Array<{ name: string; pages: Page[] }> = [
   { name: 'Professions', pages: ['crafting', 'woodcutting', 'mining', 'cooking', 'fishing', 'farming'] },
   { name: 'Realm', pages: ['workers', 'metal detector', 'factions', 'clans', 'auction', 'shop'] },
   { name: 'Character', pages: ['inventory', 'achievements', 'high scores'] },
+  { name: 'Info', pages: ['about'] },
 ]
 
 const visibleGroups = computed(() => groups.map(group => ({
@@ -19,12 +20,12 @@ const visibleGroups = computed(() => groups.map(group => ({
 
 const labels: Record<Page, string> = {
   battle: 'Battle', woodcutting: 'Woodcutting', mining: 'Mining', fishing: 'Fishing', farming: 'Farming', crafting: 'Crafting', cooking: 'Cooking',
-  'metal detector': 'Metal Detector', workers: 'Workers', inventory: 'Inventory', achievements: 'Achievements', factions: 'Factions', clans: 'Clans', auction: 'Auction', 'high scores': 'High Scores', shop: 'Shop',
+  'metal detector': 'Metal Detector', workers: 'Workers', inventory: 'Inventory', achievements: 'Achievements', factions: 'Factions', clans: 'Clans', auction: 'Auction', 'high scores': 'High Scores', shop: 'Shop', about: 'About',
 }
 
 const icons: Record<Page, string> = {
   battle: '⚔', woodcutting: '🪓', mining: '⛏', fishing: '🎣', farming: '🌾', crafting: '🔨', cooking: '🍲',
-  'metal detector': '⌁', workers: '♟', inventory: '🎒', achievements: '★', factions: '⚑', clans: '🛡', auction: '⚖', 'high scores': '♛', shop: '◈',
+  'metal detector': '⌁', workers: '♟', inventory: '🎒', achievements: '★', factions: '⚑', clans: '🛡', auction: '⚖', 'high scores': '♛', shop: '◈', about: 'ⓘ',
 }
 </script>
 

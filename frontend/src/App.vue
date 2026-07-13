@@ -18,6 +18,7 @@ import MetalDetectorPage from './MetalDetectorPage.vue'
 import GameTutorial from './GameTutorial.vue'
 import GoogleLoginButton from './GoogleLoginButton.vue'
 import ClanPage from './ClanPage.vue'
+import AboutPage from './AboutPage.vue'
 
 const {
   tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authUsernameError, authLoading, sessionRestoring, serverOnline, backendError, googleClientId, playerName, playerTitle, gold, level, xp, xpNeeded, message, player, combatStats, dps,
@@ -111,6 +112,8 @@ watch(playerName, name => {
         </article>
       </div>
     </section>
+
+    <AboutPage v-else-if="page === 'about'" />
 
     <ShopPage v-else :gold="gold" :workers="workers" :worker-price="workerPrice" :store-listings="storeListings" :upgrades="shopUpgradeDetails" :shop-upgrades="shopUpgrades" :crafting-busy="!!craftingId" :upgrade-cost="shopUpgradeCost" :gear-tooltip="gearTooltip" :format-bonus="formatBonus" @buy-worker="buyWorker" @buy-upgrade="buyShopUpgrade" @buy-gear="buyStoreGear">
       <SalvageBuyer :inventory="inventory" :prices="sellPrices" :gear="ownedGear.map(id => ({ id, name: gearCatalog[id].name, icon: gearCatalog[id].icon, equipped: equipment[gearCatalog[id].slot] === id, price: gearSellPrices[id] || 5 }))" @sell="sellItem" @sell-gear="sellGear" />
