@@ -124,7 +124,7 @@ function cookingLabel(recipe: DisplayRecipe) {
             :title="recovering ? 'Finish recovering first' : health >= maxHealth ? 'Health is already full' : `Restore up to ${effectiveHealing(recipe)} health`"
             @click="emit('eat', recipe.outputItem)"
           >
-            {{ health >= maxHealth ? 'FULL HEALTH' : recovering ? 'RECOVERING' : `EAT · +${effectiveHealing(recipe)} HP` }}
+            EAT · +{{ effectiveHealing(recipe) }} HP
           </button>
         </footer>
       </article>
@@ -171,11 +171,13 @@ function cookingLabel(recipe: DisplayRecipe) {
 .ingredients > div.missing strong { color: #c9655c; }
 .recipe-progress { margin: 0 0 8px; }
 .cook-button { width: 100%; min-height: 38px; border: 1px solid #9c6337; background: #9d5831; color: #fff0de; font-weight: 900; font-size: 11px; letter-spacing: .06em; }
-.cook-button:disabled { border-color: #443a32; background: #292521; color: #756b62; }
+.cook-button:not(:disabled) { cursor: pointer; }
+.cook-button:disabled { border-color: #443a32; background: #292521; color: #756b62; cursor: default; }
 .cooking-card footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #39322c; color: #94877b; font-size: 11px; }
 .cooking-card footer span b { color: #e5c699; }
 .cooking-card footer button { min-width: 126px; padding: 8px 10px; border: 1px solid #557a50; background: #263b25; color: #b8ddb0; font-size: 10px; font-weight: 900; }
-.cooking-card footer button:disabled { border-color: #403b36; background: #24211e; color: #6e6862; }
+.cooking-card footer button:not(:disabled) { cursor: pointer; }
+.cooking-card footer button:disabled { border-color: #403b36; background: #24211e; color: #6e6862; cursor: default; }
 @media (max-width: 900px) {
   .cooking-stats, .cooking-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
