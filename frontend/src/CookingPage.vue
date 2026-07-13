@@ -11,14 +11,10 @@ const props = defineProps<{
   profession: { level: number; xp: number; xpNeeded: number }
   stats: { speed: number; conservationChance: number; bonusDishChance: number; totalCooked: number; ingredientsSaved: number; bonusDishes: number }
   healingValues: Record<string, number>
-  health: number
-  maxHealth: number
-  recovering: boolean
 }>()
 
 const emit = defineEmits<{
   cook: [recipe: CookingRecipe]
-  eat: [item: string]
 }>()
 
 const xpPercent = computed(() => Math.min(100, props.profession.xp / Math.max(1, props.profession.xpNeeded) * 100))
@@ -46,9 +42,9 @@ function effectiveHealing(recipe: CookingRecipe) {
 
 function cookingLabel(recipe: DisplayRecipe) {
   if (props.cookingId === recipe.id) return `COOKING · ${Math.floor(recipe.progress)}%`
-  if (props.profession.level < recipe.tier) return `COOKING LEVEL ${recipe.tier}`
-  if (missingIngredients(recipe).length) return 'INGREDIENTS NEEDED'
-  if (props.cookingId) return 'KITCHEN IS BUSY'
+  if (props.profession.level < recipe.tier) return `COOK · LEVEL ${recipe.tier} REQUIRED`
+  if (missingIngredients(recipe).length) return 'COOK · INGREDIENTS NEEDED'
+  if (props.cookingId) return 'COOK · KITCHEN IS BUSY'
   return `COOK · ${formatDuration(effectiveDuration(recipe))}`
 }
 </script>
@@ -118,14 +114,6 @@ function cookingLabel(recipe: DisplayRecipe) {
 
         <footer>
           <span><b>{{ inventory[recipe.outputItem] || 0 }}</b> owned</span>
-          <button
-            type="button"
-            :disabled="!(inventory[recipe.outputItem] || 0) || health >= maxHealth || recovering"
-            :title="recovering ? 'Finish recovering first' : health >= maxHealth ? 'Health is already full' : `Restore up to ${effectiveHealing(recipe)} health`"
-            @click="emit('eat', recipe.outputItem)"
-          >
-            EAT · +{{ effectiveHealing(recipe) }} HP
-          </button>
         </footer>
       </article>
     </div>
@@ -173,11 +161,8 @@ function cookingLabel(recipe: DisplayRecipe) {
 .cook-button { width: 100%; min-height: 38px; border: 1px solid #9c6337; background: #9d5831; color: #fff0de; font-weight: 900; font-size: 11px; letter-spacing: .06em; }
 .cook-button:not(:disabled) { cursor: pointer; }
 .cook-button:disabled { border-color: #443a32; background: #292521; color: #756b62; cursor: default; }
-.cooking-card footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #39322c; color: #94877b; font-size: 11px; }
+.cooking-card footer { margin-top: 10px; padding-top: 10px; border-top: 1px solid #39322c; color: #94877b; font-size: 11px; }
 .cooking-card footer span b { color: #e5c699; }
-.cooking-card footer button { min-width: 126px; padding: 8px 10px; border: 1px solid #557a50; background: #263b25; color: #b8ddb0; font-size: 10px; font-weight: 900; }
-.cooking-card footer button:not(:disabled) { cursor: pointer; }
-.cooking-card footer button:disabled { border-color: #403b36; background: #24211e; color: #6e6862; cursor: default; }
 @media (max-width: 900px) {
   .cooking-stats, .cooking-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

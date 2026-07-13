@@ -85,7 +85,7 @@ watch(playerName, name => {
 
     <CraftingPage v-else-if="page === 'crafting'" v-model:selected-id="craftingRecipeId" v-model:view="craftingRecipeView" v-model:trail="craftingRecipeTrail" :recipes="craftingRecipes" :inventory="inventory" :gear-catalog="gearCatalog" :equipment="equipment" :resources="allResources" :rare-materials="rareMaterials" :recipe-levels="recipeLevels" :crafting-id="craftingId" :profession="craftingProfession" :stats="craftingStats" @craft="craft" @navigate="page = $event" />
 
-    <CookingPage v-else-if="page === 'cooking'" :recipes="cookingRecipeList" :inventory="inventory" :cooking-id="cookingId" :profession="cookingProfession" :stats="cookingStats" :healing-values="foodHealingValues" :health="player.health" :max-health="combatStats.maxHealth" :recovering="recovering" @cook="cook" @eat="eatFood" />
+    <CookingPage v-else-if="page === 'cooking'" :recipes="cookingRecipeList" :inventory="inventory" :cooking-id="cookingId" :profession="cookingProfession" :stats="cookingStats" :healing-values="foodHealingValues" @cook="cook" />
 
     <MetalDetectorPage v-else-if="page === 'metal detector'" :detector="metalDetector" :gold="gold" @reveal="revealDetectorTile" @drill="startDetectorDrill" @relocate="newDetectorSite" />
 
