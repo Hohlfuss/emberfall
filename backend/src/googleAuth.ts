@@ -31,7 +31,7 @@ export function sanitizeDisplayName(input: string): string {
 }
 
 export function canonicalDisplayName(input: string): string {
-  return sanitizeDisplayName(input).trim().toLowerCase().replace(/\s+/g, ' ')
+  return input.trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
 export async function verifyGoogleCredential(

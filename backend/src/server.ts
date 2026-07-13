@@ -1375,6 +1375,17 @@ function passwordHash(password: string, salt: string) {
   return scryptSync(password, salt, 64).toString('hex')
 }
 
+async function displayNameIsTaken(displayName: string, exceptUsername?: string): Promise<boolean> {
+  let query = supabase.from('players').select('username, name')
+  if (exceptUsername) query = query.neq('username', exceptUsername)
+
+  const { data: players, error } = await query
+  if (error) throw error
+
+  const candidate = canonicalDisplayName(displayName)
+  return Boolean(players?.some(player => canonicalDisplayName(player.name || '') === candidate))
+}
+
 function issueToken(username: string, gameId: string): string {
   const token = randomBytes(32).toString('hex')
 
@@ -1454,7 +1465,7 @@ app.post('/api/auth/google', async (request, response) => {
     const identity = await verifyGoogleCredential(credential, googleClientId, googleOAuthClient)
     const existingResult = await supabase
       .from('players')
-      .select('username, name, game_id, game_state')
+      .select('username, name, game_id, game_state, display_name_set')
       .eq('google_sub', identity.subject)
       .maybeSingle()
 
@@ -1481,20 +1492,26 @@ app.post('/api/auth/google', async (request, response) => {
         username = `google-${randomBytes(5).toString('hex')}`.slice(0, 18)
       }
 
-      const game = createGame(identity.name)
+      let provisionalName = ''
+      do {
+        provisionalName = `pending-${randomBytes(5).toString('hex')}`
+      } while (await displayNameIsTaken(provisionalName))
+
+      const game = createGame(provisionalName)
       const inserted = await supabase
         .from('players')
         .insert({
           username,
-          name: identity.name,
+          name: provisionalName,
           google_sub: identity.subject,
           google_email: identity.email,
+          display_name_set: false,
           salt: null,
           password_hash: null,
           game_id: game.id,
           game_state: serializeGame(game),
         })
-        .select('username, name, game_id, game_state')
+        .select('username, name, game_id, game_state, display_name_set')
         .single()
 
       if (inserted.error) {
@@ -1515,7 +1532,7 @@ app.post('/api/auth/google', async (request, response) => {
       ? { state: publicState(game) }
       : captureOfflineProgress(game, Date.now())
     await saveGame(playerRow.username, game)
-    const needsDisplayName = isNewPlayer || playerRow.name === identity.name
+    const needsDisplayName = playerRow.display_name_set === false
 
     return response.status(isNewPlayer ? 201 : 200).json({
       token: issueToken(playerRow.username, game.id),
@@ -1550,15 +1567,7 @@ app.post('/api/auth/display-name', async (request, response) => {
       return response.status(400).json({ error: error instanceof Error ? error.message : 'Display name is invalid.' })
     }
 
-    const canonical = canonicalDisplayName(displayName)
-    const { data: existingRows, error: lookupError } = await supabase
-      .from('players')
-      .select('username, name')
-      .neq('username', session.username)
-
-    if (lookupError) throw lookupError
-    const taken = existingRows?.some(player => canonicalDisplayName(player.name || '') === canonical)
-    if (taken) {
+    if (await displayNameIsTaken(displayName, session.username)) {
       return response.status(409).json({ error: 'That display name is already taken.' })
     }
 
@@ -1581,9 +1590,12 @@ app.post('/api/auth/display-name', async (request, response) => {
 
     const { error: saveError } = await supabase
       .from('players')
-      .update({ name: displayName, game_state: serializeGame(game) })
+      .update({ name: displayName, display_name_set: true, game_state: serializeGame(game) })
       .eq('username', session.username)
 
+    if (saveError?.code === '23505') {
+      return response.status(409).json({ error: 'That display name is already taken.' })
+    }
     if (saveError) throw saveError
 
     await saveGame(session.username, game)
@@ -1638,6 +1650,12 @@ app.post('/api/auth/register', async (request, response) => {
       })
     }
 
+    if (await displayNameIsTaken(name)) {
+      return response.status(409).json({
+        error: 'That username is already used as another player\'s display name.',
+      })
+    }
+
     const salt = randomBytes(16).toString('hex')
     const game = createGame(name)
 
@@ -1657,7 +1675,7 @@ app.post('/api/auth/register', async (request, response) => {
 
       if (insertError.code === '23505') {
         return response.status(409).json({
-          error: 'That username is already taken.',
+          error: 'That username or display name is already taken.',
         })
       }
 

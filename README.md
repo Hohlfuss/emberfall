@@ -10,7 +10,8 @@ Run these files in the Supabase SQL editor:
 
 1. The original players and leaderboard schema used by the game.
 2. `backend/google-oauth-schema.sql`.
-3. `backend/auction-schema.sql` if the auction house has not already been created.
+3. `backend/display-name-uniqueness-schema.sql` after resolving any duplicates reported by its diagnostic query.
+4. `backend/auction-schema.sql` if the auction house has not already been created.
 
 Use the Supabase **service role/secret key** on Render, not a browser publishable key. Never add that secret to `frontend/.env` or commit it.
 

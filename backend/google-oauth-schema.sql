@@ -1,7 +1,8 @@
 -- Run this once in the Supabase SQL editor before enabling Google login.
 alter table public.players
   add column if not exists google_sub text,
-  add column if not exists google_email text;
+  add column if not exists google_email text,
+  add column if not exists display_name_set boolean not null default true;
 
 alter table public.players
   alter column salt drop not null,
