@@ -16,9 +16,9 @@ const steps = [
     tip: 'Critical harvests and catches finish faster. Upgrade each profession’s tool for stronger gathering stats.',
   },
   {
-    icon: '♟', eyebrow: 'STEP 3 · WORKERS', title: 'Put gatherers to work',
-    body: 'Your first free gatherer unlocks at player level 2, with more awarded at later milestones. Assign them from the Workers page for passive materials.',
-    tip: 'A large notification appears whenever a level awards a new gatherer.',
+    icon: '♟', eyebrow: 'STEP 3 · WORKERS', title: 'Put Workers to work',
+    body: 'Your first free Worker unlocks at player level 2, with more awarded at later milestones. Assign them from the Workers page for passive materials.',
+    tip: 'A large notification appears whenever a level awards a new Worker.',
   },
   {
     icon: '⚒', eyebrow: 'STEP 4 · CRAFTING', title: 'Build useful equipment',

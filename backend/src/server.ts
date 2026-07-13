@@ -824,16 +824,16 @@ function gainXp(game: Game, amount: number) {
       game.workers += earnedLevelWorkers - game.levelRewardWorkers
       game.levelRewardWorkers = earnedLevelWorkers
       gainedWorker = true
-      game.message = `Level ${game.level}! A gatherer joined you as a level reward.`
+      game.message = `Level ${game.level}! A Worker joined you as a level reward.`
     } else game.message = `Level up! ${game.name} reached level ${game.level}.`
     pushEvent(
       game,
       'level',
       `Player level ${game.level}!`,
-      `+5 max health · +1 attack${gainedDefense ? ' · +1 defense' : ''}${gainedWorker ? ' · +1 gatherer' : ''}`,
+      `+5 max health · +1 attack${gainedDefense ? ' · +1 defense' : ''}${gainedWorker ? ' · +1 Worker' : ''}`,
     )
     if (gainedWorker) {
-      pushEvent(game, 'worker', 'New gatherer unlocked!', `You now have ${game.workers} gatherer${game.workers === 1 ? '' : 's'} · assign them on the Workers page`)
+      pushEvent(game, 'worker', 'New Worker unlocked!', `You now have ${game.workers} Worker${game.workers === 1 ? '' : 's'} · assign them on the Workers page`)
     }
   }
   checkAchievements(game)

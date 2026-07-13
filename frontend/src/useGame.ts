@@ -707,7 +707,7 @@ export function useGame() {
   function assignWorker(resource: Resource, change: number) { void sendAction({ type: 'assignWorker', resourceId: resource.id, change }) }
   function buyWorker() { void sendAction({ type: 'buyWorker' }) }
   function buyShopUpgrade(upgrade: ShopUpgradeDetail) { void sendAction({ type: 'buyUpgrade', upgradeId: upgrade.id }) }
-  function buyStoreGear(listing: typeof storeListings.value[number]) { if (listing.itemId) void sendAction({ type: 'buyGear', gearId: listing.itemId }) }
+  function buyStoreGear(listing: { itemId?: string }) { if (listing.itemId) void sendAction({ type: 'buyGear', gearId: listing.itemId }) }
   function equipGear(id: string) { void sendAction({ type: 'equipGear', gearId: id }) }
   function toggleAutoBattle(enabled: boolean) { void sendAction({ type: 'toggleAutoBattle', enabled }) }
   function sellItem(item: string, quantity: number) { void sendAction({ type: 'sellItem', item, quantity }) }
