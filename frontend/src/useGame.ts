@@ -35,7 +35,7 @@ type ServerState = {
   enemyTier: number; highestEnemyTier: number
   enemy: { name: string; archetype: string; health: number; maxHealth: number; attack: number; defense: number; attackSpeed: number; xp: number; gold: number }
   battleStarted: boolean; autoBattle: boolean; recovering: boolean; enemyLoading: boolean; recoveryRemaining: number; enemyLoadRemaining: number
-  selectedFood: string | null; autoEat: boolean; autoEatThreshold: number; autoEatCooldownRemaining: number; foodHealingPowerBonus: number; foodHealingValues: Record<string, number>
+  selectedFood: string | null; autoEat: boolean; autoEatThreshold: number; autoEatCooldownRemaining: number; foodHealingPowerBonus: number; foodHealingValues: Record<string, number>; foodHotValues: Record<string, { healing: number; duration: number }>; activeFoodHot: { item: string; remainingHealing: number; remaining: number; stacks: number } | null
   professions: Record<Skill, { level: number; xp: number; xpNeeded: number }>
   craftingProfession: { level: number; xp: number; xpNeeded: number }
   craftingStats: { speed: number; conservationChance: number; bonusOutputChance: number; totalCrafts: number; materialsSaved: number; bonusOutputs: number }
@@ -189,6 +189,8 @@ export function useGame() {
   const autoEatCooldownRemaining = computed(() => state.value?.autoEatCooldownRemaining || 0)
   const foodHealingPowerBonus = computed(() => state.value?.foodHealingPowerBonus || 0)
   const foodHealingValues = computed(() => state.value?.foodHealingValues || {})
+  const foodHotValues = computed(() => state.value?.foodHotValues || {})
+  const activeFoodHot = computed(() => state.value?.activeFoodHot || null)
   const recovering = computed(() => Boolean(state.value?.recovering))
   const enemyLoading = computed(() => Boolean(state.value?.enemyLoading))
   const recoveryRemaining = computed(() => state.value?.recoveryRemaining || 0)
@@ -278,6 +280,8 @@ export function useGame() {
     name: recipe.name,
     icon: recipe.icon,
     healing: foodHealingValues.value[recipe.outputItem] || recipe.healing,
+    hotHealing: foodHotValues.value[recipe.outputItem]?.healing || 0,
+    hotDuration: foodHotValues.value[recipe.outputItem]?.duration || 0,
     owned: inventory.value[recipe.outputItem] || 0,
   })))
 
@@ -775,11 +779,11 @@ export function useGame() {
 
   return {
     tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authUsernameError, authLoading, sessionRestoring, serverOnline, backendError, playerName, playerTitle, gold, level, xp, xpNeeded, message, player, combatStats, dps,
-    enemyTier, highestEnemyTier, encounterMode, defeatedBosses, tierFiveAreasUnlocked, bossDefinitions, currentBoss, enemy, battleStarted, autoBattle, selectedFood, autoEat, autoEatThreshold, autoEatCooldownRemaining, foodHealingPowerBonus, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
+    enemyTier, highestEnemyTier, encounterMode, defeatedBosses, tierFiveAreasUnlocked, bossDefinitions, currentBoss, enemy, battleStarted, autoBattle, selectedFood, autoEat, autoEatThreshold, autoEatCooldownRemaining, foodHealingPowerBonus, activeFoodHot, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
     heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
     woods, rocks, fishingSpots, farmingPlots, allResources, rareMaterials, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, googleClientId, professions, jobs, inventory, sellPrices, resourceMastery,
     workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId, craftingProfession, craftingStats, cookingId, cookingProfession, cookingStats, factionDefinitions, alliedFaction, factions, dailyObjectives, dailyResetAt, metalDetector,
-    craftingRecipes, cookingRecipeList, battleFoods, foodHealingValues, recipeLevels, storeListings, materialGroups, toasts,
+    craftingRecipes, cookingRecipeList, battleFoods, foodHealingValues, foodHotValues, recipeLevels, storeListings, materialGroups, toasts,
     leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
     chatMessages, chatOnline, chatError,
     auctionListings, auctionError, offlineProgress,

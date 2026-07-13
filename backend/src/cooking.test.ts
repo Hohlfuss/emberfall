@@ -17,16 +17,25 @@ test('cooking has one progressively unlocked healing dish for every tier', () =>
   }
 })
 
-test('every cooking recipe combines matching-tier fishing and farming ingredients', () => {
+test('every cooking recipe uses its matching-tier fish and crop in increasingly complex meals', () => {
   for (const recipe of cookingRecipes) {
     const ingredients = Object.keys(recipe.costs)
-    const fish = fishingSpots.filter(spot => ingredients.includes(spot.item))
-    const crops = farmingPlots.filter(plot => ingredients.includes(plot.item))
+    const matchingFish = fishingSpots.find(spot => spot.tier === recipe.tier)
+    const matchingCrop = farmingPlots.find(plot => plot.tier === recipe.tier)
 
-    assert.equal(fish.length, 1, `${recipe.name} should use exactly one fish`)
-    assert.equal(crops.length, 1, `${recipe.name} should use exactly one crop`)
-    assert.equal(fish[0]?.tier, recipe.tier)
-    assert.equal(crops[0]?.tier, recipe.tier)
+    assert.ok(matchingFish && ingredients.includes(matchingFish.item), `${recipe.name} should use its matching-tier fish`)
+    assert.ok(matchingCrop && ingredients.includes(matchingCrop.item), `${recipe.name} should use its matching-tier crop`)
+    assert.equal(ingredients.length, recipe.tier === 1 ? 2 : recipe.tier < 4 ? 3 : 4)
     assert.ok(Object.values(recipe.costs).every(quantity => Number.isInteger(quantity) && quantity > 0))
+  }
+})
+
+test('some foods provide valid healing over time without making every food identical', () => {
+  const hotFoods = cookingRecipes.filter(recipe => recipe.hot)
+  assert.ok(hotFoods.length >= 3)
+  assert.ok(hotFoods.length < cookingRecipes.length)
+  for (const recipe of hotFoods) {
+    assert.ok(Number.isInteger(recipe.hot!.healing) && recipe.hot!.healing > 0)
+    assert.ok(Number.isInteger(recipe.hot!.duration) && recipe.hot!.duration > 0)
   }
 })

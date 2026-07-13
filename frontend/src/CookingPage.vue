@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { GAME_PACE_MULTIPLIER, type CookingRecipe } from './gameData'
 
 type DisplayRecipe = CookingRecipe & { progress: number; remaining?: number }
+type RecipeState = 'active' | 'ready' | 'missing' | 'locked'
 
 const props = defineProps<{
   recipes: DisplayRecipe[]
@@ -11,18 +12,43 @@ const props = defineProps<{
   profession: { level: number; xp: number; xpNeeded: number }
   stats: { speed: number; conservationChance: number; bonusDishChance: number; totalCooked: number; ingredientsSaved: number; bonusDishes: number }
   healingValues: Record<string, number>
+  hotValues: Record<string, { healing: number; duration: number }>
 }>()
 
-const emit = defineEmits<{
-  cook: [recipe: CookingRecipe]
-}>()
-
-const xpPercent = computed(() => Math.min(100, props.profession.xp / Math.max(1, props.profession.xpNeeded) * 100))
-const activeRecipe = computed(() => props.recipes.find(recipe => recipe.id === props.cookingId))
+const emit = defineEmits<{ cook: [recipe: CookingRecipe] }>()
+const search = ref('')
+const selectedId = ref('')
+const detailPanel = ref<HTMLElement>()
 
 function missingIngredients(recipe: CookingRecipe) {
   return Object.entries(recipe.costs).filter(([item, quantity]) => (props.inventory[item] || 0) < quantity)
 }
+
+function recipeState(recipe: DisplayRecipe): RecipeState {
+  if (props.cookingId === recipe.id) return 'active'
+  if (props.profession.level < recipe.tier) return 'locked'
+  if (missingIngredients(recipe).length) return 'missing'
+  return 'ready'
+}
+
+function stateRank(recipe: DisplayRecipe) {
+  return ({ active: 0, ready: 1, missing: 2, locked: 3 })[recipeState(recipe)]
+}
+
+const visibleRecipes = computed(() => {
+  const query = search.value.trim().toLowerCase()
+  return props.recipes
+    .filter(recipe => !query || [recipe.name, recipe.description, recipe.outputItem, ...Object.keys(recipe.costs)].join(' ').toLowerCase().includes(query))
+    .slice()
+    .sort((a, b) => stateRank(a) - stateRank(b) || a.tier - b.tier)
+})
+
+watch([visibleRecipes, () => props.cookingId], ([recipes, activeId]) => {
+  if (activeId && !selectedId.value) selectedId.value = activeId
+  if (!recipes.some(recipe => recipe.id === selectedId.value)) selectedId.value = recipes[0]?.id || ''
+}, { immediate: true })
+
+const selectedRecipe = computed(() => props.recipes.find(recipe => recipe.id === selectedId.value))
 
 function effectiveDuration(recipe: CookingRecipe) {
   return Math.max(.1, recipe.duration * GAME_PACE_MULTIPLIER * (1 - props.stats.speed / 100))
@@ -32,146 +58,158 @@ function formatDuration(seconds: number) {
   return seconds < 10 ? `${seconds.toFixed(1)}s` : `${Math.ceil(seconds)}s`
 }
 
-function canCook(recipe: CookingRecipe) {
-  return !props.cookingId && props.profession.level >= recipe.tier && !missingIngredients(recipe).length
-}
-
 function effectiveHealing(recipe: CookingRecipe) {
   return props.healingValues[recipe.outputItem] || recipe.healing
 }
 
-function cookingLabel(recipe: DisplayRecipe) {
-  if (props.cookingId === recipe.id) return `COOKING · ${Math.floor(recipe.progress)}%`
-  if (props.profession.level < recipe.tier) return `COOK · LEVEL ${recipe.tier} REQUIRED`
-  if (missingIngredients(recipe).length) return 'COOK · INGREDIENTS NEEDED'
-  if (props.cookingId) return 'COOK · KITCHEN IS BUSY'
+function effectiveHotHealing(recipe: CookingRecipe) {
+  return props.hotValues[recipe.outputItem]?.healing || recipe.hot?.healing || 0
+}
+
+function canCook(recipe: DisplayRecipe) {
+  return recipeState(recipe) === 'ready' && !props.cookingId
+}
+
+function stateLabel(recipe: DisplayRecipe) {
+  const state = recipeState(recipe)
+  if (state === 'active') return 'Cooking'
+  if (state === 'ready') return props.cookingId ? 'Ready next' : 'Ready'
+  if (state === 'locked') return `Level ${recipe.tier}`
+  return `Need ${missingIngredients(recipe).length}`
+}
+
+function statusTitle(recipe: DisplayRecipe) {
+  const state = recipeState(recipe)
+  if (state === 'active') return 'Cooking now'
+  if (state === 'locked') return `Requires cooking level ${recipe.tier}`
+  if (state === 'missing') return 'Ingredients still needed'
+  if (props.cookingId) return 'The kitchen is busy'
+  return 'Ready to cook'
+}
+
+function statusMessage(recipe: DisplayRecipe) {
+  const state = recipeState(recipe)
+  if (state === 'active') return `${Math.floor(recipe.progress)}% complete.`
+  if (state === 'locked') return `Raise Cooking by ${recipe.tier - props.profession.level} more ${recipe.tier - props.profession.level === 1 ? 'level' : 'levels'}.`
+  if (state === 'missing') return `Find ${missingIngredients(recipe).map(([item, needed]) => `${Number(needed) - (props.inventory[item] || 0)} ${item}`).join(', ')}.`
+  if (props.cookingId) return 'Finish the current dish before starting another.'
+  return `Takes ${formatDuration(effectiveDuration(recipe))}.`
+}
+
+function actionLabel(recipe: DisplayRecipe) {
+  const state = recipeState(recipe)
+  if (state === 'locked') return `COOK · LEVEL ${recipe.tier} REQUIRED`
+  if (state === 'missing') return 'COOK · INGREDIENTS NEEDED'
+  if (props.cookingId) return 'COOK · KITCHEN BUSY'
   return `COOK · ${formatDuration(effectiveDuration(recipe))}`
+}
+
+function selectRecipe(recipe: DisplayRecipe) {
+  selectedId.value = recipe.id
+  if (window.matchMedia('(max-width: 900px)').matches) {
+    nextTick(() => detailPanel.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
 }
 </script>
 
 <template>
-  <section class="page-content cooking-page">
-    <div class="page-heading cooking-heading">
+  <section class="page-content crafting-page cooking-page">
+    <header class="crafting-heading cooking-heading">
       <div>
-        <p class="eyebrow">HEALING PROFESSION</p>
+        <p class="eyebrow">THE EMBERFALL KITCHEN</p>
         <h1>Cooking</h1>
-        <p>Pair fish with farm crops to prepare food. Higher tiers restore more health, while cooking levels improve kitchen speed and efficiency.</p>
+        <p>Choose a recipe, check its ingredients, and prepare food for battle.</p>
       </div>
-      <div class="cooking-level-card">
-        <span>COOKING LEVEL</span>
-        <strong>{{ profession.level }}</strong>
+      <div class="crafting-level cooking-level" aria-label="Cooking level">
+        <div><span>COOKING LEVEL</span><strong>{{ profession.level }}</strong></div>
         <small>{{ profession.xp.toLocaleString() }} / {{ profession.xpNeeded.toLocaleString() }} XP</small>
-        <div class="meter"><i :style="{ width: `${xpPercent}%` }"></i></div>
-        <p>{{ Math.max(0, profession.xpNeeded - profession.xp).toLocaleString() }} XP to level {{ profession.level + 1 }}</p>
       </div>
-    </div>
+    </header>
 
-    <div class="cooking-stats">
-      <article><span>Kitchen speed</span><strong>+{{ stats.speed.toFixed(1) }}%</strong><small>Shortens every recipe</small></article>
-      <article><span>Conservation</span><strong>{{ stats.conservationChance.toFixed(1) }}%</strong><small>Chance to save one of each ingredient</small></article>
-      <article><span>Bonus dish</span><strong>{{ stats.bonusDishChance.toFixed(1) }}%</strong><small>Chance to make a second food</small></article>
-      <article><span>Meals cooked</span><strong>{{ stats.totalCooked.toLocaleString() }}</strong><small>{{ stats.ingredientsSaved }} ingredients saved · {{ stats.bonusDishes }} bonus dishes</small></article>
-    </div>
-
-    <article v-if="activeRecipe" class="active-kitchen">
-      <b>{{ activeRecipe.icon }}</b>
-      <div>
-        <span>ON THE STOVE</span>
-        <h2>{{ activeRecipe.name }}</h2>
-        <div class="meter"><i :style="{ width: `${activeRecipe.progress}%` }"></i></div>
-        <small>{{ Math.floor(activeRecipe.progress) }}% complete · {{ formatDuration(activeRecipe.remaining || 0) }} remaining</small>
-      </div>
-    </article>
-
-    <div class="recipe-heading">
-      <div><p class="eyebrow">THE EMBERFALL COOKBOOK</p><h2>Fish & harvest recipes</h2></div>
-      <p>One cooking job can run alongside gathering, crafting, and battle.</p>
-    </div>
-
-    <div class="cooking-grid">
-      <article
-        v-for="recipe in recipes"
-        :key="recipe.id"
-        class="cooking-card"
-        :class="{ locked: profession.level < recipe.tier, active: cookingId === recipe.id }"
-      >
-        <header>
-          <div class="dish-icon">{{ recipe.icon }}</div>
-          <div><span>TIER {{ recipe.tier }} · REQUIRES COOKING LEVEL {{ recipe.tier }}</span><h3>{{ recipe.name }}</h3></div>
-          <strong class="healing">+{{ effectiveHealing(recipe) }} HP</strong>
-        </header>
-        <p>{{ recipe.description }}</p>
-
-        <div class="ingredients">
-          <span>INGREDIENTS</span>
-          <div v-for="(needed, item) in recipe.costs" :key="item" :class="{ missing: (inventory[item] || 0) < needed }">
-            <b>{{ item }}</b><strong>{{ inventory[item] || 0 }} / {{ needed }}</strong>
-          </div>
+    <div class="crafting-workbench cooking-workbench">
+      <aside class="recipe-browser">
+        <div class="recipe-browser-heading">
+          <div><span>STEP 1</span><h2>Choose a recipe</h2></div>
+          <small>{{ visibleRecipes.length }} shown</small>
         </div>
 
-        <div v-if="cookingId === recipe.id" class="recipe-progress meter"><i :style="{ width: `${recipe.progress}%` }"></i></div>
-        <button class="cook-button" type="button" :disabled="!canCook(recipe)" @click="emit('cook', recipe)">{{ cookingLabel(recipe) }}</button>
+        <div class="recipe-search">
+          <span class="sr-only">Search cooking recipes or ingredients</span>
+          <b aria-hidden="true">⌕</b>
+          <input v-model="search" type="search" aria-label="Search cooking recipes or ingredients" placeholder="Search recipes or ingredients…">
+          <button v-if="search" type="button" aria-label="Clear search" @click="search = ''">×</button>
+        </div>
 
-        <footer>
-          <span><b>{{ inventory[recipe.outputItem] || 0 }}</b> owned</span>
+        <div v-if="visibleRecipes.length" class="recipe-list">
+          <button
+            v-for="recipe in visibleRecipes"
+            :key="recipe.id"
+            class="recipe-row"
+            :class="[`is-${recipeState(recipe)}`, { selected: selectedRecipe?.id === recipe.id }]"
+            :aria-pressed="selectedRecipe?.id === recipe.id"
+            @click="selectRecipe(recipe)"
+          >
+            <b class="recipe-row-icon">{{ recipe.icon }}</b>
+            <span class="recipe-row-copy"><strong>{{ recipe.name }}</strong><small>Tier {{ recipe.tier }} · +{{ effectiveHealing(recipe) }} HP</small></span>
+            <em>{{ stateLabel(recipe) }}</em>
+          </button>
+        </div>
+        <div v-else class="recipe-list-empty"><b>◇</b><strong>No matching recipes</strong><button @click="search = ''">CLEAR SEARCH</button></div>
+      </aside>
+
+      <article v-if="selectedRecipe" ref="detailPanel" class="recipe-detail cooking-detail" tabindex="-1">
+        <header class="recipe-detail-heading">
+          <div class="recipe-detail-icon" :class="`is-${recipeState(selectedRecipe)}`">{{ selectedRecipe.icon }}</div>
+          <div><span>STEP 2 · FOOD · TIER {{ selectedRecipe.tier }}</span><h2>{{ selectedRecipe.name }}</h2><p>{{ selectedRecipe.description }}</p></div>
+          <small>{{ formatDuration(effectiveDuration(selectedRecipe)) }}</small>
+        </header>
+
+        <section class="recipe-result">
+          <div class="recipe-section-title"><span>YOU WILL RECEIVE</span><small>{{ (inventory[selectedRecipe.outputItem] || 0).toLocaleString() }} currently owned</small></div>
+          <div class="recipe-result-card cooking-result"><b>{{ selectedRecipe.icon }}</b><div><strong>1 × {{ selectedRecipe.outputItem }}</strong><small>Restores {{ effectiveHealing(selectedRecipe) }} health instantly<template v-if="selectedRecipe.hot"> · plus {{ effectiveHotHealing(selectedRecipe) }} over {{ selectedRecipe.hot.duration }}s</template></small><p v-if="selectedRecipe.hot">Heal-over-time duration stacks when multiple meals are eaten.</p><p v-else-if="stats.bonusDishChance">{{ stats.bonusDishChance }}% chance to prepare a second dish.</p></div></div>
+        </section>
+
+        <section class="recipe-requirements">
+          <div class="recipe-section-title"><span>INGREDIENTS</span><small>Spent when cooking starts</small></div>
+          <div class="material-checklist">
+            <article v-for="(needed, item) in selectedRecipe.costs" :key="item" :class="{ missing: recipeState(selectedRecipe) !== 'active' && (inventory[item] || 0) < Number(needed) }">
+              <b>{{ recipeState(selectedRecipe) === 'active' || (inventory[item] || 0) >= Number(needed) ? '✓' : '!' }}</b>
+              <div><strong>{{ item }}</strong><small v-if="recipeState(selectedRecipe) === 'active'">Committed to this dish</small><small v-else-if="(inventory[item] || 0) >= Number(needed)">Ready</small><small v-else>Find {{ Number(needed) - (inventory[item] || 0) }} more</small></div>
+              <p><span>OWNED</span><strong>{{ (inventory[item] || 0).toLocaleString() }}</strong></p>
+              <p><span>NEEDED</span><strong>{{ Number(needed).toLocaleString() }}</strong></p>
+              <span v-if="recipeState(selectedRecipe) === 'active' || (inventory[item] || 0) >= Number(needed)" class="material-ready">{{ recipeState(selectedRecipe) === 'active' ? 'COMMITTED' : 'READY' }}</span>
+              <span v-else class="material-source">GATHER</span>
+            </article>
+          </div>
+        </section>
+
+        <footer class="recipe-action-panel" :class="[`is-${recipeState(selectedRecipe)}`, { 'is-busy': cookingId && recipeState(selectedRecipe) !== 'active' }]">
+          <div><span>STEP 3</span><strong>{{ statusTitle(selectedRecipe) }}</strong><p>{{ statusMessage(selectedRecipe) }}</p></div>
+          <button :disabled="!canCook(selectedRecipe)" @click="emit('cook', selectedRecipe)">
+            <template v-if="recipeState(selectedRecipe) === 'active'"><span>COOKING · {{ Math.floor(selectedRecipe.progress) }}%</span><span class="recipe-craft-progress" role="progressbar" :aria-label="`${selectedRecipe.name} cooking progress`" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.round(selectedRecipe.progress)"><i :style="{ width: `${selectedRecipe.progress}%` }"></i></span></template>
+            <template v-else>{{ actionLabel(selectedRecipe) }}</template>
+          </button>
         </footer>
       </article>
+      <div v-else class="recipe-detail recipe-detail-empty"><b>◇</b><strong>Select a recipe to inspect it</strong></div>
     </div>
   </section>
 </template>
 
 <style scoped>
-.cooking-page { --kitchen: #d88445; --herb: #78a66a; }
-.cooking-heading { align-items: stretch; }
-.cooking-heading > div:first-child { max-width: 680px; }
+.cooking-page { --kitchen: #d88445; }
+.cooking-heading { margin-bottom: 18px; }
 .cooking-heading h1 { text-transform: capitalize; }
-.cooking-level-card { min-width: 260px; padding: 18px 20px; border: 1px solid #5f4736; background: linear-gradient(145deg, #241b17, #191613); box-shadow: inset 3px 0 var(--kitchen); }
-.cooking-level-card > span, .active-kitchen span, .ingredients > span, .cooking-card header span { color: #b99e89; font-size: 10px; font-weight: 900; letter-spacing: .12em; }
-.cooking-level-card > strong { display: block; color: #f2c28d; font-family: Georgia, serif; font-size: 42px; line-height: 1; margin: 7px 0; }
-.cooking-level-card small, .cooking-level-card p { color: #9f9389; font-size: 11px; }
-.cooking-level-card p { margin: 7px 0 0; }
-.cooking-level-card .meter { margin-top: 9px; }
-.cooking-level-card .meter i, .active-kitchen .meter i, .recipe-progress i { background: linear-gradient(90deg, #bd6638, #edaf64); }
-.cooking-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 18px 0; }
-.cooking-stats article { padding: 15px; border: 1px solid #493d34; background: #191714; }
-.cooking-stats span, .cooking-stats small { display: block; color: #94877c; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
-.cooking-stats strong { display: block; color: #e8c08d; font-size: 20px; margin: 5px 0; }
-.active-kitchen { display: flex; align-items: center; gap: 18px; margin: 18px 0 24px; padding: 17px 20px; border: 1px solid #7e5638; background: linear-gradient(90deg, rgba(216,132,69,.17), #1b1714); }
-.active-kitchen > b { font-size: 38px; }
-.active-kitchen > div { flex: 1; }
-.active-kitchen h2 { margin: 2px 0 9px; color: #f3d0a7; }
-.active-kitchen small { color: #b6a393; }
-.recipe-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin: 26px 0 12px; }
-.recipe-heading h2, .recipe-heading p { margin: 0; }
-.recipe-heading > p { color: #958a81; font-size: 12px; }
-.cooking-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.cooking-card { padding: 17px; border: 1px solid #4b4038; background: linear-gradient(150deg, #201b18, #171512); transition: border-color .2s, opacity .2s; }
-.cooking-card.active { border-color: var(--kitchen); box-shadow: inset 0 0 0 1px rgba(216,132,69,.25); }
-.cooking-card.locked { opacity: .58; }
-.cooking-card header { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; }
-.dish-icon { display: grid; place-items: center; width: 49px; height: 49px; border: 1px solid #674c39; background: #2b211a; font-size: 27px; }
-.cooking-card h3 { margin: 3px 0 0; color: #e8ddcf; font-size: 17px; }
-.cooking-card > p { min-height: 34px; color: #9e9288; font-size: 12px; line-height: 1.45; }
-.healing { color: #82bf79; white-space: nowrap; }
-.ingredients { margin: 14px 0; padding: 11px 12px; background: #12110f; border: 1px solid #39322c; }
-.ingredients > div { display: flex; justify-content: space-between; margin-top: 7px; color: #c7b9ab; font-size: 12px; }
-.ingredients > div strong { color: #75a66b; }
-.ingredients > div.missing strong { color: #c9655c; }
-.recipe-progress { margin: 0 0 8px; }
-.cook-button { width: 100%; min-height: 38px; border: 1px solid #9c6337; background: #9d5831; color: #fff0de; font-weight: 900; font-size: 11px; letter-spacing: .06em; }
-.cook-button:not(:disabled) { cursor: pointer; }
-.cook-button:disabled { border-color: #443a32; background: #292521; color: #756b62; cursor: default; }
-.cooking-card footer { margin-top: 10px; padding-top: 10px; border-top: 1px solid #39322c; color: #94877b; font-size: 11px; }
-.cooking-card footer span b { color: #e5c699; }
-@media (max-width: 900px) {
-  .cooking-stats, .cooking-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (max-width: 620px) {
-  .cooking-heading, .recipe-heading { display: block; }
-  .cooking-level-card { min-width: 0; margin-top: 15px; }
-  .cooking-stats, .cooking-grid { grid-template-columns: 1fr; }
-  .recipe-heading > p { margin-top: 8px; }
-  .cooking-card header { grid-template-columns: auto 1fr; }
-  .healing { grid-column: 2; }
-}
+.cooking-level { border-color: #d8844545; background: #d884450a; }
+.cooking-level > div:first-child span { color: #b47b52; }
+.cooking-level > div:first-child strong { color: #efb475; }
+.cooking-workbench { border-color: #d8844526; }
+.cooking-detail .recipe-detail-icon { border-color: #8b5b3a; background: #d8844510; }
+.cooking-result { border-color: #d8844533; background: linear-gradient(100deg, #d884450d, transparent); }
+.cooking-result p { color: #82a878; }
+.cooking-page .recipe-action-panel.is-ready { border-color: #d8844555; background: #d8844509; }
+.cooking-page .recipe-action-panel.is-ready > div > strong { color: #e5ad75; }
+.cooking-page .recipe-action-panel.is-ready > button { border-color: #d88445; background: linear-gradient(#e69a5d, #a9552d); color: #fff4e9; }
+.cooking-page .recipe-craft-progress i { background: linear-gradient(90deg, #9c4f2c, #e49a60); }
+@media(max-width:900px){.cooking-heading{margin-bottom:0}}
 </style>

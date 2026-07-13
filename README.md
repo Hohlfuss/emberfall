@@ -59,11 +59,13 @@ Players can also register and log in with a username and password. The browser s
 
 ## Area progression and navigation
 
-New heroes begin with Battle, Fishing, Farming, Cooking, Workers, Inventory, Achievements, Auction House, High Scores, and Shop. The first Tier 5 normal-enemy victory unlocks Woodcutting, Mining, and Crafting together.
+New heroes begin with Battle, Woodcutting, Mining, Fishing, Farming, Crafting, Cooking, Workers, Inventory, Achievements, Auction House, High Scores, and Shop.
+
+Some cooked foods provide healing over time in addition to instant healing. Eating additional HoT foods queues their full effects after the current one, stacking both the remaining duration and healing; the active queue is saved with the player.
 
 The Battle page also has ten sequential Area Bosses at normal-enemy-equivalent Power Tiers 10, 20, 30, and onward through 100. The Buried Colossus unlocks Metal Detector and the Bannerless King unlocks Factions. The remaining bosses currently award XP and gold, leaving room for more boss-gated areas later. Existing saves preserve previously earned access.
 
-Desktop navigation groups destinations by Adventure, Professions, Realm, and Character. Mobile uses a persistent Battle, Explore, Inventory, and Menu bar; the Explore sheet also shows the next boss and any associated area unlock.
+Desktop navigation groups destinations by Adventure, Professions, Realm, and Character. Mobile uses a persistent Battle, Gather, Make, Inventory, and More bar with small destination sheets for each area group.
 
 ## Local development
 

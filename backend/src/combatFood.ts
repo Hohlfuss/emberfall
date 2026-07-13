@@ -7,6 +7,30 @@ export function upgradedFoodHealing(baseHealing: number, healingPowerRank: numbe
   return Math.max(1, Math.round(base * (1 + rank * .1)))
 }
 
+export type HealOverTimeEffect = {
+  totalHealing: number
+  appliedHealing: number
+  startedAt: number
+  endsAt: number
+}
+
+export function healOverTimeProgress(effect: HealOverTimeEffect, now: number) {
+  const duration = Math.max(1, effect.endsAt - effect.startedAt)
+  const progress = Math.max(0, Math.min(1, (now - effect.startedAt) / duration))
+  const targetHealing = Math.floor(Math.max(0, effect.totalHealing) * progress)
+  return {
+    healing: Math.max(0, targetHealing - Math.max(0, effect.appliedHealing)),
+    appliedHealing: targetHealing,
+    complete: now >= effect.endsAt,
+  }
+}
+
+export function stackedHealOverTimeTiming(previousEndsAt: number | undefined, now: number, durationSeconds: number) {
+  const duration = Math.max(1, Math.round(durationSeconds * 1000))
+  const startedAt = Math.max(now, Number.isFinite(previousEndsAt) ? Number(previousEndsAt) : now)
+  return { startedAt, endsAt: startedAt + duration }
+}
+
 export function deathGoldPenalty(currentGold: number) {
   const gold = Math.max(0, Number.isFinite(currentGold) ? Math.floor(currentGold) : 0)
   return Math.floor(gold * .1)

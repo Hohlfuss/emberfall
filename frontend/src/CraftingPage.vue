@@ -105,8 +105,6 @@ const parentRecipe = computed(() => {
   return parentId ? props.recipes.find(recipe => recipe.id === parentId) : undefined
 })
 
-const xpPercent = computed(() => Math.max(0, Math.min(100, props.profession.xp / Math.max(1, props.profession.xpNeeded) * 100)))
-
 function viewCount(target: RecipeView) {
   return props.recipes.filter(recipe => matchesView(recipe, target)).length
 }
@@ -303,9 +301,6 @@ function missingMaterialHint(item: string, needed: number) {
   return source ? `${source} · gather ${deficit} more` : `Find ${deficit} more`
 }
 
-function activeTimeRemaining(recipe: DisplayRecipe) {
-  return Math.max(0, recipe.remaining ?? effectiveDuration(recipe) * (1 - recipe.progress / 100))
-}
 </script>
 
 <template>
@@ -316,26 +311,11 @@ function activeTimeRemaining(recipe: DisplayRecipe) {
         <h1>Crafting</h1>
         <p>Pick a recipe. The forge will show exactly what you have, what is missing, and where to get it.</p>
       </div>
-      <div class="crafting-level" aria-label="Crafting level progress">
+      <div class="crafting-level" aria-label="Crafting level">
         <div><span>CRAFTING LEVEL</span><strong>{{ profession.level }}</strong></div>
         <small>{{ profession.xp.toLocaleString() }} / {{ profession.xpNeeded.toLocaleString() }} XP</small>
-        <div class="meter" role="progressbar" aria-label="Crafting experience" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.round(xpPercent)"><i :style="{ width: `${xpPercent}%` }"></i></div>
-        <p><span>Speed +{{ stats.speed }}%</span><span>Save {{ stats.conservationChance }}%</span><span>Double {{ stats.bonusOutputChance }}%</span></p>
       </div>
     </header>
-
-    <article v-if="activeRecipe" class="crafting-job">
-      <b>{{ categoryIcon(activeRecipe) }}</b>
-      <div class="crafting-job-copy">
-        <span>FORGE ACTIVE</span>
-        <strong>{{ activeRecipe.name }}</strong>
-        <small>{{ formatDuration(activeTimeRemaining(activeRecipe)) }} remaining</small>
-      </div>
-      <div class="crafting-job-progress">
-        <strong>{{ Math.floor(activeRecipe.progress) }}%</strong>
-        <div class="meter" role="progressbar" :aria-label="`${activeRecipe.name} crafting progress`" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.round(activeRecipe.progress)"><i :style="{ width: `${activeRecipe.progress}%` }"></i></div>
-      </div>
-    </article>
 
     <div class="crafting-workbench">
       <aside class="recipe-browser">

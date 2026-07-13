@@ -27,7 +27,7 @@ test('only metal detector and factions are currently boss-gated', () => {
   ])
 })
 
-test('starting areas and the Tier 5 frontier match the progression design', () => {
-  assert.deepEqual(startingPages, ['battle', 'fishing', 'farming', 'cooking', 'workers', 'inventory', 'achievements', 'auction', 'high scores', 'shop'])
-  assert.deepEqual(tierFiveUnlockPages, ['woodcutting', 'mining', 'crafting'])
+test('core professions are available from the beginning', () => {
+  assert.deepEqual(startingPages, ['battle', 'woodcutting', 'mining', 'fishing', 'farming', 'crafting', 'cooking', 'workers', 'inventory', 'achievements', 'auction', 'high scores', 'shop'])
+  assert.deepEqual(tierFiveUnlockPages, [])
 })

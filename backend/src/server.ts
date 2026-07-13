@@ -21,7 +21,7 @@ import {
   DETECTOR_DRILL_MS, DETECTOR_MAX_CHARGES, DETECTOR_RECHARGE_MS,
   detectorDepthGain, detectorEmptyChance, detectorJackpotChance, detectorRewardScale, rechargeDetectorCharges,
 } from './detector.ts'
-import { AUTO_EAT_COOLDOWN_MS, AUTO_EAT_HEALTH_THRESHOLD, autoEatReady, deathGoldPenalty, upgradedFoodHealing } from './combatFood.ts'
+import { AUTO_EAT_COOLDOWN_MS, AUTO_EAT_HEALTH_THRESHOLD, autoEatReady, deathGoldPenalty, healOverTimeProgress, stackedHealOverTimeTiming, upgradedFoodHealing } from './combatFood.ts'
 import { supabase } from "../supabase.ts";
 import { canonicalDisplayName, googleUsernameCandidates, sanitizeDisplayName, verifyGoogleCredential } from './googleAuth.ts'
 
@@ -100,6 +100,7 @@ type AchievementDefinition = { id: string; name: string; description: string; ki
 type GatherJob = { resourceId: string; startedAt: number; endsAt: number; critical: boolean; duration: number }
 type CraftJob = { recipeId: string; startedAt: number; endsAt: number; duration: number; receipt?: string }
 type CookingJob = { recipeId: string; startedAt: number; endsAt: number; duration: number; receipt?: string }
+type FoodHealOverTime = { item: string; totalHealing: number; appliedHealing: number; startedAt: number; endsAt: number }
 type TimedState = { startedAt: number; endsAt: number }
 type FactionId = 'wardens' | 'delvers' | 'vanguard'
 type FactionProgress = { reputation: number; rank: number }
@@ -139,6 +140,7 @@ type Game = {
   selectedFood: string | null
   autoEat: boolean
   nextAutoEatAt: number
+  foodHotQueue: FoodHealOverTime[]
   unlockedAchievements: Set<string>
   titleAchievementId: string | null
   enemyTier: number
@@ -436,7 +438,6 @@ function areaUnlocked(game: Game, page: Page) {
 
 function requireArea(game: Game, page: Page) {
   if (areaUnlocked(game, page)) return
-  if (tierFiveUnlockPages.includes(page)) reject('Defeat a Tier 5 normal enemy to unlock Woodcutting, Mining, and Crafting.')
   const boss = bossDefinitions.find(candidate => candidate.unlockPage === page)
   reject(boss ? `Defeat ${boss.name} to unlock ${boss.unlockName}.` : 'That area is still locked.')
 }
@@ -452,10 +453,6 @@ function deserializeGame(value: unknown): Game {
     achievement.id === stored.titleAchievementId && achievement.titleReward && storedAchievementIds.includes(achievement.id),
   )
   const defeatedBosses = normalizedBossProgress(stored.defeatedBosses)
-  const legacyTierFiveUnlock = !Array.isArray(stored.defeatedBosses)
-    || (stored.highestEnemyTier ?? 1) >= 6
-    || ['bramblemaw', 'ironhideGolem', 'ashenForgemaster'].some(id => stored.defeatedBosses.includes(id))
-
   return {
     ...stored,
 
@@ -477,10 +474,21 @@ function deserializeGame(value: unknown): Game {
     selectedFood: cookingRecipes.some(recipe => recipe.outputItem === stored.selectedFood) ? stored.selectedFood : null,
     autoEat: Boolean(stored.autoEat && (stored.shopUpgrades?.autoEat ?? 0) > 0),
     nextAutoEatAt: Number.isFinite(stored.nextAutoEatAt) ? stored.nextAutoEatAt : 0,
+    foodHotQueue: Array.isArray(stored.foodHotQueue)
+      ? stored.foodHotQueue.filter(effect =>
+          typeof effect?.item === 'string'
+          && Number.isFinite(effect.totalHealing)
+          && Number.isFinite(effect.appliedHealing)
+          && Number.isFinite(effect.startedAt)
+          && Number.isFinite(effect.endsAt)
+          && effect.totalHealing > 0
+          && effect.endsAt > effect.startedAt,
+        )
+      : [],
     autoBattle: stored.autoBattle ?? false,
     encounterMode: stored.encounterMode === 'boss' ? 'boss' : 'normal',
     defeatedBosses,
-    tierFiveAreasUnlocked: stored.tierFiveAreasUnlocked ?? legacyTierFiveUnlock,
+    tierFiveAreasUnlocked: true,
     ownedGear: [...new Set([...(stored.ownedGear ?? []), 'wornFishingRod', 'wornFarmingHoe'])],
     unlockedGear: [...new Set([...(stored.unlockedGear ?? stored.ownedGear ?? []), 'wornFishingRod', 'wornFarmingHoe'])],
     equipment: {
@@ -609,16 +617,28 @@ function cookingStats(game: Game) {
 function foodHealing(game: Game, baseHealing: number) {
   return upgradedFoodHealing(baseHealing, game.shopUpgrades.healingPower)
 }
-function consumeFood(game: Game, item: string, automatic = false) {
+function consumeFood(game: Game, item: string, automatic = false, now = Date.now()) {
   const recipe = cookingRecipes.find(candidate => candidate.outputItem === item)
   if (!recipe || (game.inventory[item] || 0) < 1 || game.recovery) return null
   const maximumHealth = combatStats(game).maxHealth
-  if (game.player.health >= maximumHealth) return null
+  if (game.player.health >= maximumHealth && !recipe.hot) return null
   const healing = foodHealing(game, recipe.healing)
   const healed = Math.min(healing, maximumHealth - game.player.health)
   game.inventory[item]--
   game.player.health = Math.min(maximumHealth, game.player.health + healing)
-  game.message = `${automatic ? 'Auto-Eat used' : 'You ate'} ${item} and restored ${Math.round(healed)} health.`
+  let hotMessage = ''
+  if (recipe.hot) {
+    const hotHealing = foodHealing(game, recipe.hot.healing)
+    const timing = stackedHealOverTimeTiming(game.foodHotQueue.at(-1)?.endsAt, now, recipe.hot.duration)
+    game.foodHotQueue.push({
+      item,
+      totalHealing: hotHealing,
+      appliedHealing: 0,
+      ...timing,
+    })
+    hotMessage = ` It will also restore ${hotHealing} health over ${recipe.hot.duration}s; HoT duration is stacked.`
+  }
+  game.message = `${automatic ? 'Auto-Eat used' : 'You ate'} ${item} and restored ${Math.round(healed)} health.${hotMessage}`
   return { recipe, healed }
 }
 function tryAutoEat(game: Game, now: number) {
@@ -632,7 +652,7 @@ function tryAutoEat(game: Game, now: number) {
     nextAutoEatAt: game.nextAutoEatAt,
     now,
   })) return false
-  if (!consumeFood(game, item, true)) return false
+  if (!consumeFood(game, item, true, now)) return false
   game.nextAutoEatAt = now + AUTO_EAT_COOLDOWN_MS
   return true
 }
@@ -1046,13 +1066,6 @@ function finishVictory(game: Game, now: number) {
   giveGold(game, rewardGold)
   game.lifetime.kills++
   gainFactionReputation(game, 'vanguard', Math.max(1, game.enemyTier * 2))
-  const unlockedTierFiveAreas = game.enemyTier === 5 && !game.tierFiveAreasUnlocked
-  if (unlockedTierFiveAreas) {
-    game.tierFiveAreasUnlocked = true
-    pushEvent(game, 'achievement', 'The frontier is open!', 'Woodcutting, Mining, and Crafting unlocked')
-    chatMessages.push({ id: randomUUID(), username: 'realm', name: 'Realm Herald', message: `${game.name} defeated a Tier 5 enemy and opened Woodcutting, Mining, and Crafting!`, createdAt: new Date().toISOString() })
-    if (chatMessages.length > CHAT_LIMIT) chatMessages.splice(0, chatMessages.length - CHAT_LIMIT)
-  }
   const rareDrops = ['voidfang', 'heartOfTheGrove', 'starforgedSignet']
   if (game.enemyTier >= 5 && Math.random() < .00015 + game.enemyTier * .00005) {
     const gearId = rareDrops[Math.floor(Math.random() * rareDrops.length)]!
@@ -1069,9 +1082,7 @@ function finishVictory(game: Game, now: number) {
   stopBattle(game)
   gainXp(game, rewardXp)
   checkAchievements(game)
-  startEnemyLoad(game, now, unlockedTierFiveAreas
-    ? `Tier 5 victory! Woodcutting, Mining, and Crafting unlocked. Loading next enemy...`
-    : `Tier ${game.enemyTier} victory! +${rewardXp} XP and +${rewardGold} gold. Loading next enemy...`)
+  startEnemyLoad(game, now, `Tier ${game.enemyTier} victory! +${rewardXp} XP and +${rewardGold} gold. Loading next enemy...`)
 }
 
 function beginRecovery(game: Game, now: number) {
@@ -1081,6 +1092,7 @@ function beginRecovery(game: Game, now: number) {
   const goldLost = deathGoldPenalty(game.gold)
   game.gold -= goldLost
   game.player.health = 0
+  game.foodHotQueue = []
   const duration = combatStats(game).recoveryTime
   game.recovery = { startedAt: now, endsAt: now + duration }
   startEnemyLoad(game, now, `Defeated and lost ${goldLost.toLocaleString()} gold (10%). Recovering while the next enemy loads.`)
@@ -1147,6 +1159,19 @@ function advanceGame(game: Game, now = Date.now()) {
       game.player.health = Math.min(combatStats(game).maxHealth, game.player.health + healing)
     }
   } else game.player.regenBuffer = 0
+
+  if (game.foodHotQueue.length) {
+    let hotHealing = 0
+    game.foodHotQueue.forEach(effect => {
+      const progress = healOverTimeProgress(effect, now)
+      effect.appliedHealing = progress.appliedHealing
+      hotHealing += progress.healing
+    })
+    if (!game.recovery && game.player.health > 0 && hotHealing > 0) {
+      game.player.health = Math.min(combatStats(game).maxHealth, game.player.health + hotHealing)
+    }
+    game.foodHotQueue = game.foodHotQueue.filter(effect => now < effect.endsAt)
+  }
 
     ; (['woodcutting', 'mining', 'fishing', 'farming'] as Skill[]).forEach(skill => {
       if (game.jobs[skill] && now >= game.jobs[skill]!.endsAt) completeGather(game, skill)
@@ -1226,10 +1251,10 @@ function createGame(name: string): Game {
     inventory: {}, ownedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe', 'wornFishingRod', 'wornFarmingHoe'], unlockedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe', 'wornFishingRod', 'wornFarmingHoe'],
     equipment: { weapon: 'rustySword', helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: 'crackedPickaxe', hatchet: 'wornHatchet', fishingRod: 'wornFishingRod', farmingHoe: 'wornFarmingHoe' },
     professions: { woodcutting: { level: 1, xp: 0 }, mining: { level: 1, xp: 0 }, fishing: { level: 1, xp: 0 }, farming: { level: 1, xp: 0 } }, craftingProfession: { level: 1, xp: 0 }, cookingProfession: { level: 1, xp: 0 }, resourceMastery: {}, jobs: {},
-    workerAssignments: {}, workerProgress: {}, workers: 0, levelRewardWorkers: 0, shopUpgrades: { medic: 0, scouting: 0, training: 0, fortitude: 0, autoBattle: 0, autoEat: 0, healingPower: 0 }, selectedFood: null, autoEat: false, nextAutoEatAt: 0,
+    workerAssignments: {}, workerProgress: {}, workers: 0, levelRewardWorkers: 0, shopUpgrades: { medic: 0, scouting: 0, training: 0, fortitude: 0, autoBattle: 0, autoEat: 0, healingPower: 0 }, selectedFood: null, autoEat: false, nextAutoEatAt: 0, foodHotQueue: [],
     unlockedAchievements: new Set(), titleAchievementId: null, alliedFaction: null, factions: { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } }, daily: createDailyState(createLifetimeStats()), metalDetector: createMetalDetector(now),
     lifetime: createLifetimeStats(),
-    enemyTier: 1, highestEnemyTier: 1, encounterMode: 'normal', defeatedBosses: [], tierFiveAreasUnlocked: false, enemy: { name: 'Loading...', archetype: '', health: 0, maxHealth: 1, attack: 0, defense: 0, attackSpeed: 0, xp: 0, gold: 0 },
+    enemyTier: 1, highestEnemyTier: 1, encounterMode: 'normal', defeatedBosses: [], tierFiveAreasUnlocked: true, enemy: { name: 'Loading...', archetype: '', health: 0, maxHealth: 1, attack: 0, defense: 0, attackSpeed: 0, xp: 0, gold: 0 },
     battleActive: false, autoBattle: false, nextPlayerAttackAt: 0, nextEnemyAttackAt: 0, recovery: null, enemyLoad: null, crafting: null, cooking: null,
     events: [], nextEventId: 1,
     progressSnapshot: { at: now, gold: 0, xp: 0, level: 1, kills: 0, gathered: 0, crafted: 0, cooked: 0, inventory: {}, ownedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe', 'wornFishingRod', 'wornFarmingHoe'] },
@@ -1368,8 +1393,8 @@ function performAction(game: Game, action: Action, now: number) {
       if ((game.inventory[action.item] || 0) < 1) reject(`You do not have any ${action.item}.`)
       if (game.recovery) reject('Finish recovering before eating food.')
       const maximumHealth = combatStats(game).maxHealth
-      if (game.player.health >= maximumHealth) reject('Your health is already full.')
-      consumeFood(game, action.item)
+      if (game.player.health >= maximumHealth && !recipe.hot) reject('Your health is already full.')
+      consumeFood(game, action.item, false, now)
       break
     }
     case 'setSelectedFood': {
@@ -1589,6 +1614,13 @@ function publicState(game: Game, now = Date.now()) {
   const nextDetectorChargeIn = game.metalDetector.charges >= DETECTOR_MAX_CHARGES
     ? 0
     : Math.max(0, DETECTOR_RECHARGE_MS - (now - game.metalDetector.chargeUpdatedAt))
+  const lastFoodHot = game.foodHotQueue.at(-1)
+  const activeFoodHot = lastFoodHot ? {
+    item: game.foodHotQueue[0]!.item,
+    remainingHealing: game.foodHotQueue.reduce((sum, effect) => sum + Math.max(0, effect.totalHealing - effect.appliedHealing), 0),
+    remaining: Math.max(0, lastFoodHot.endsAt - now),
+    stacks: game.foodHotQueue.length,
+  } : null
   return {
     id: game.id, revision: game.revision, serverNow: now, playerName: game.name, playerTitle: equippedTitle || 'Aspiring Adventurer', gold: game.gold, level: game.level, xp: game.xp, xpNeeded: xpNeeded(game), message: game.message,
     player: { health: game.player.health }, combatStats: stats,
@@ -1598,6 +1630,11 @@ function publicState(game: Game, now = Date.now()) {
     autoEatCooldownRemaining: Math.max(0, game.nextAutoEatAt - now),
     foodHealingPowerBonus: game.shopUpgrades.healingPower * 10,
     foodHealingValues: Object.fromEntries(cookingRecipes.map(recipe => [recipe.outputItem, foodHealing(game, recipe.healing)])),
+    foodHotValues: Object.fromEntries(cookingRecipes.filter(recipe => recipe.hot).map(recipe => [recipe.outputItem, {
+      healing: foodHealing(game, recipe.hot!.healing),
+      duration: recipe.hot!.duration,
+    }])),
+    activeFoodHot,
     encounterMode: game.encounterMode,
     defeatedBosses: game.defeatedBosses,
     tierFiveAreasUnlocked: game.tierFiveAreasUnlocked,
