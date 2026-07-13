@@ -141,7 +141,7 @@ export function useGame() {
   let sessionRestoreAttempted = false
 
   const emptyProfessionStats: ProfessionStats = { speed: 0, bonusYieldPercent: 1, critChance: 0, critPower: 1.5 }
-  const emptyCombat = { maxHealth: 100, attack: 0, defense: 0, attackSpeed: 1800, recoveryTime: 60000, enemyLoadTime: 2000, passiveRegen: .2 }
+  const emptyCombat = { maxHealth: 100, attack: 0, defense: 0, attackSpeed: 1800, recoveryTime: 60000, enemyLoadTime: 3600, passiveRegen: .2 }
   const emptyEnemy = { name: 'Loading...', archetype: '', health: 0, maxHealth: 1, attack: 0, defense: 0, attackSpeed: 0, xp: 0, gold: 0 }
   const emptyEquipment = { weapon: undefined, helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: undefined, hatchet: undefined, fishingRod: undefined, farmingHoe: undefined } satisfies Record<GearSlot, string | undefined>
 

@@ -79,6 +79,7 @@ const app = express()
 const port = Number(process.env.PORT) || 3000
 const googleClientId = (process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '').trim()
 const googleOAuthClient = new OAuth2Client(googleClientId)
+const BASE_ENEMY_LOAD_TIME = 4_000
 app.use(express.json())
 app.use((request, response, next) => {
   response.setHeader('Access-Control-Allow-Origin', '*')
@@ -458,6 +459,7 @@ function deserializeGame(value: unknown): Game {
     player: {
       ...stored.player,
       baseRecoveryTime: Math.max(60_000, stored.player?.baseRecoveryTime ?? 60_000),
+      baseEnemyLoadTime: Math.max(BASE_ENEMY_LOAD_TIME, stored.player?.baseEnemyLoadTime ?? BASE_ENEMY_LOAD_TIME),
     },
     shopUpgrades: {
       medic: stored.shopUpgrades?.medic ?? 0,
@@ -1128,7 +1130,7 @@ function createGame(name: string): Game {
   const game: Game = {
     id: randomUUID(), revision: 0, lastAdvancedAt: now, name, gold: 0, level: 1, xp: 0,
     message: `Welcome, ${name}. Your adventure begins.`,
-    player: { health: 100, baseMaxHealth: 100, baseAttack: 10, baseDefense: 3, baseAttackSpeed: 1800, baseRecoveryTime: 60000, baseEnemyLoadTime: 2000, basePassiveRegen: .2, regenBuffer: 0 },
+    player: { health: 100, baseMaxHealth: 100, baseAttack: 10, baseDefense: 3, baseAttackSpeed: 1800, baseRecoveryTime: 60000, baseEnemyLoadTime: BASE_ENEMY_LOAD_TIME, basePassiveRegen: .2, regenBuffer: 0 },
     inventory: {}, ownedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe', 'wornFishingRod', 'wornFarmingHoe'], unlockedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe', 'wornFishingRod', 'wornFarmingHoe'],
     equipment: { weapon: 'rustySword', helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: 'crackedPickaxe', hatchet: 'wornHatchet', fishingRod: 'wornFishingRod', farmingHoe: 'wornFarmingHoe' },
     professions: { woodcutting: { level: 1, xp: 0 }, mining: { level: 1, xp: 0 }, fishing: { level: 1, xp: 0 }, farming: { level: 1, xp: 0 } }, craftingProfession: { level: 1, xp: 0 }, cookingProfession: { level: 1, xp: 0 }, resourceMastery: {}, jobs: {},
