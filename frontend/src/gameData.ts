@@ -1,4 +1,4 @@
-export type Page = 'battle' | 'woodcutting' | 'mining' | 'fishing' | 'farming' | 'crafting' | 'metal detector' | 'workers' | 'inventory' | 'achievements' | 'factions' | 'auction' | 'high scores' | 'shop'
+export type Page = 'battle' | 'woodcutting' | 'mining' | 'fishing' | 'farming' | 'crafting' | 'cooking' | 'metal detector' | 'workers' | 'inventory' | 'achievements' | 'factions' | 'auction' | 'high scores' | 'shop'
 export type Skill = 'woodcutting' | 'mining' | 'fishing' | 'farming'
 export type GearSlot = 'weapon' | 'helmet' | 'chest' | 'legs' | 'boots' | 'gloves' | 'ring' | 'amulet' | 'pickaxe' | 'hatchet' | 'fishingRod' | 'farmingHoe'
 export type ProfessionStats = { speed: number; bonusYieldPercent: number; critChance: number; critPower: number }
@@ -72,6 +72,18 @@ export type Recipe = {
   outputQty?: number
   outputGear?: string
   progress: number
+}
+
+export type CookingRecipe = {
+  id: string
+  name: string
+  description: string
+  tier: number
+  duration: number
+  costs: Record<string, number>
+  outputItem: string
+  healing: number
+  icon: string
 }
 
 const treeData = [
@@ -261,6 +273,19 @@ export const recipes: Recipe[] = [
   { id: 'silverMechanism', name: 'Silver Mechanism', category: 'components', description: 'A precision assembly consuming both early fittings and tempered parts.', duration: 78, costs: { 'Iron Fittings': 2, 'Tempered Tool Head': 1, 'Silver Ingot': 3, 'Cut Gem': 1 }, outputItem: 'Silver Mechanism', outputQty: 1, progress: 0 },
   { id: 'obsidianCore', name: 'Obsidian Core', category: 'components', description: 'A dense advanced core formed around a silver mechanism.', duration: 115, costs: { 'Silver Mechanism': 2, 'Obsidian Plate': 3, 'Runed Plate': 1 }, outputItem: 'Obsidian Core', outputQty: 1, progress: 0 },
   { id: 'mythrilAssembly', name: 'Mythril Assembly', category: 'components', description: 'The final assembly consumes components from every earlier era.', duration: 165, costs: { 'Pinebound Frame': 2, 'Iron Fittings': 2, 'Silver Mechanism': 2, 'Obsidian Core': 1, 'Mythril Ingot': 4 }, outputItem: 'Mythril Assembly', outputQty: 1, progress: 0 },
+]
+
+export const cookingRecipes: CookingRecipe[] = [
+  { id: 'minnowTurnipBroth', name: 'Minnow & Turnip Broth', description: 'A humble broth for small scrapes after an early adventure.', tier: 1, duration: 12, costs: { 'Silver Minnow': 2, Turnip: 2 }, outputItem: 'Minnow Turnip Broth', healing: 15, icon: '🍲' },
+  { id: 'troutOnionStew', name: 'Trout & Onion Stew', description: 'River trout and sweet onions simmered into a warming meal.', tier: 2, duration: 18, costs: { 'River Trout': 2, Onion: 2 }, outputItem: 'Trout Onion Stew', healing: 25, icon: '🥘' },
+  { id: 'carpCarrotSkewers', name: 'Carp & Carrot Skewers', description: 'Silver carp grilled with crisp carrots over an open flame.', tier: 3, duration: 25, costs: { 'Silver Carp': 2, Carrot: 2 }, outputItem: 'Carp Carrot Skewers', healing: 40, icon: '🍢' },
+  { id: 'eelCabbagePot', name: 'Ember Eel Cabbage Pot', description: 'Spicy eel balanced by tender cabbage leaves.', tier: 4, duration: 34, costs: { 'Ember Eel': 2, Cabbage: 3 }, outputItem: 'Eel Cabbage Pot', healing: 55, icon: '🍛' },
+  { id: 'pikeCornChowder', name: 'Pike & Corn Chowder', description: 'A rich marsh pike chowder thickened with sunlit corn.', tier: 5, duration: 46, costs: { 'Marsh Pike': 3, Corn: 3 }, outputItem: 'Pike Corn Chowder', healing: 75, icon: '🥣' },
+  { id: 'koiPumpkinSoup', name: 'Ghost Koi Pumpkin Soup', description: 'Moonlit koi and ember pumpkin make a restorative enchanted soup.', tier: 6, duration: 60, costs: { 'Ghost Koi': 3, 'Ember Pumpkin': 3 }, outputItem: 'Koi Pumpkin Soup', healing: 100, icon: '🍜' },
+  { id: 'anglerSunberryPlate', name: 'Angler & Sunberry Plate', description: 'Deep-cave fish brightened with sharp, restorative sunberries.', tier: 7, duration: 78, costs: { 'Cave Angler': 3, Sunberry: 4 }, outputItem: 'Angler Sunberry Plate', healing: 135, icon: '🍱' },
+  { id: 'tunaWheatFeast', name: 'Sunscale Wheat Feast', description: 'Sunscale tuna served over fragrant golden wheat.', tier: 8, duration: 98, costs: { 'Sunscale Tuna': 4, 'Golden Wheat': 4 }, outputItem: 'Sunscale Wheat Feast', healing: 180, icon: '🍣' },
+  { id: 'moonfinMelonPlatter', name: 'Moonfin Melon Platter', description: 'A cool moonfin platter with slices of luminous moonmelon.', tier: 9, duration: 122, costs: { Moonfin: 4, Moonmelon: 4 }, outputItem: 'Moonfin Melon Platter', healing: 240, icon: '🍽️' },
+  { id: 'leviathanPepperBanquet', name: 'Leviathan Pepper Banquet', description: 'A legendary banquet whose heat can pull an adventurer back from the brink.', tier: 10, duration: 150, costs: { 'Leviathan Fry': 5, 'Dragon Pepper': 5 }, outputItem: 'Leviathan Pepper Banquet', healing: 325, icon: '🔥' },
 ]
 
 export const slotLabels: Record<GearSlot, string> = {

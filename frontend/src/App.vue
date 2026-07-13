@@ -5,6 +5,7 @@ import type { Skill } from './gameData'
 import ChatPanel from './ChatPanel.vue'
 import AuctionHouse from './AuctionHouse.vue'
 import CraftingPage from './CraftingPage.vue'
+import CookingPage from './CookingPage.vue'
 import AutoBattleControl from './AutoBattleControl.vue'
 import CraftingInventoryStats from './CraftingInventoryStats.vue'
 import SalvageBuyer from './SalvageBuyer.vue'
@@ -20,15 +21,15 @@ const {
   heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
   woods, rocks, fishingSpots, farmingPlots, allResources, rareMaterials, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, sellPrices, resourceMastery,
   workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId,
-  craftingProfession, craftingStats,
+  craftingProfession, craftingStats, cookingId, cookingProfession, cookingStats,
   factionDefinitions, alliedFaction, factions,
   dailyObjectives, dailyResetAt, metalDetector,
-  craftingRecipes, recipeLevels, storeListings, materialGroups, toasts,
+  craftingRecipes, cookingRecipeList, recipeLevels, storeListings, materialGroups, toasts,
   leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
   chatMessages, chatOnline, chatError,
   auctionListings, auctionError, offlineProgress,
   professionStats, professionXpNeeded, isUnlocked, effectiveDuration, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip,
-  submitAuth, switchAuthMode, loginWithGoogle, submitDisplayName, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
+  submitAuth, switchAuthMode, loginWithGoogle, submitDisplayName, startBattle, changeEnemyTier, gather, craft, cook, eatFood, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
   displayNameRequired, displayNameDraft, displayNameError, displayNameLoading,
 } = useGame()
 
@@ -90,6 +91,8 @@ watch(playerName, name => {
 
     <CraftingPage v-else-if="page === 'crafting'" v-model:selected-id="craftingRecipeId" v-model:view="craftingRecipeView" v-model:trail="craftingRecipeTrail" :recipes="craftingRecipes" :inventory="inventory" :gear-catalog="gearCatalog" :equipment="equipment" :resources="allResources" :rare-materials="rareMaterials" :recipe-levels="recipeLevels" :crafting-id="craftingId" :profession="craftingProfession" :stats="craftingStats" @craft="craft" @navigate="page = $event" />
 
+    <CookingPage v-else-if="page === 'cooking'" :recipes="cookingRecipeList" :inventory="inventory" :cooking-id="cookingId" :profession="cookingProfession" :stats="cookingStats" :health="player.health" :max-health="combatStats.maxHealth" :recovering="recovering" @cook="cook" @eat="eatFood" />
+
     <MetalDetectorPage v-else-if="page === 'metal detector'" :detector="metalDetector" :gold="gold" @reveal="revealDetectorTile" @drill="startDetectorDrill" @relocate="newDetectorSite" />
 
     <section v-else-if="page === 'workers'" class="page-content"><div class="page-heading"><div><p class="eyebrow">AUTOMATION</p><h1>Workers</h1><p>Workers use elapsed time and operate at exactly 20% of manual speed. Free gatherers join at levels 2, 5, 10, 15, and every 5 levels after.</p></div><div class="worker-count">{{ freeWorkers }} FREE / {{ workers }} TOTAL</div></div><div v-if="!workers" class="empty-state">You have no workers yet. Reach level 2 for a free gatherer, or hire one in the shop.</div><div class="worker-list"><article v-for="resource in allResources" :key="resource.id" class="worker-row" :class="{ locked: !isUnlocked(resource) }"><span class="resource-icon small">{{ resource.icon }}</span><div class="worker-resource"><h3>{{ resource.name }} <small>Lv. {{ resource.tier }}</small></h3><div class="meter"><i :style="{ width: `${workerProgress[resource.id] || 0}%` }"></i></div></div><button @click="assignWorker(resource,-1)" :disabled="!(workerAssignments[resource.id] || 0)">−</button><strong>{{ workerAssignments[resource.id] || 0 }}</strong><button @click="assignWorker(resource,1)" :disabled="freeWorkers <= 0 || !isUnlocked(resource)">+</button></article></div></section>
@@ -149,13 +152,14 @@ watch(playerName, name => {
         <p class="eyebrow">WELCOME BACK · AWAY {{ formatOfflineDuration(offlineProgress.durationMs) }}</p>
         <h2 id="offline-progress-title">While you were away</h2>
         <p>Your workers and active tasks kept making progress.</p>
-        <div v-if="offlineProgress.gold || offlineProgress.xp || offlineProgress.levels || offlineProgress.kills || offlineProgress.gathered || offlineProgress.crafted" class="offline-totals">
+        <div v-if="offlineProgress.gold || offlineProgress.xp || offlineProgress.levels || offlineProgress.kills || offlineProgress.gathered || offlineProgress.crafted || offlineProgress.cooked" class="offline-totals">
           <div v-if="offlineProgress.gold"><span>Gold</span><strong>+{{ offlineProgress.gold.toLocaleString() }}</strong></div>
           <div v-if="offlineProgress.xp"><span>Player XP</span><strong>+{{ offlineProgress.xp.toLocaleString() }}</strong></div>
           <div v-if="offlineProgress.levels"><span>Levels</span><strong>+{{ offlineProgress.levels }}</strong></div>
           <div v-if="offlineProgress.kills"><span>Victories</span><strong>+{{ offlineProgress.kills }}</strong></div>
           <div v-if="offlineProgress.gathered"><span>Gathered</span><strong>+{{ offlineProgress.gathered.toLocaleString() }}</strong></div>
           <div v-if="offlineProgress.crafted"><span>Crafted</span><strong>+{{ offlineProgress.crafted.toLocaleString() }}</strong></div>
+          <div v-if="offlineProgress.cooked"><span>Cooked</span><strong>+{{ offlineProgress.cooked.toLocaleString() }}</strong></div>
         </div>
         <div v-if="offlineProgress.items.length" class="offline-items">
           <h3>Items collected</h3>
@@ -165,7 +169,7 @@ watch(playerName, name => {
           <h3>Gear acquired</h3>
           <p v-for="entry in offlineProgress.gear" :key="entry.id"><span>{{ entry.icon }} {{ entry.name }}</span><strong>NEW</strong></p>
         </div>
-        <p v-if="!offlineProgress.items.length && !offlineProgress.gear.length && !offlineProgress.gold && !offlineProgress.xp && !offlineProgress.kills && !offlineProgress.gathered && !offlineProgress.crafted" class="offline-empty">No rewards were earned. Assign workers or leave a task active before signing out.</p>
+        <p v-if="!offlineProgress.items.length && !offlineProgress.gear.length && !offlineProgress.gold && !offlineProgress.xp && !offlineProgress.kills && !offlineProgress.gathered && !offlineProgress.crafted && !offlineProgress.cooked" class="offline-empty">No rewards were earned. Assign workers or leave a task active before signing out.</p>
         <button class="primary" autofocus @click="dismissOfflineProgress">CONTINUE</button>
       </section>
     </div>
@@ -205,6 +209,10 @@ watch(playerName, name => {
 
       <button :class="{ selected: leaderboardCategory === 'farming' }" @click="loadLeaderboard('farming')">
         Farming
+      </button>
+
+      <button :class="{ selected: leaderboardCategory === 'cooking' }" @click="loadLeaderboard('cooking')">
+        Cooking
       </button>
 
       <button :class="{ selected: leaderboardCategory === 'kills' }" @click="loadLeaderboard('kills')">

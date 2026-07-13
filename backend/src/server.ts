@@ -7,7 +7,7 @@ import { OAuth2Client } from 'google-auth-library'
 
 loadEnv({ path: fileURLToPath(new URL('../.env', import.meta.url)) })
 import {
-  allResources, farmingPlots, fishingSpots, GAME_PACE_MULTIPLIER, gearCatalog, rareMaterials, recipes as recipeData, rocks, slotLabels, woods,
+  allResources, cookingRecipes, farmingPlots, fishingSpots, GAME_PACE_MULTIPLIER, gearCatalog, rareMaterials, recipes as recipeData, rocks, slotLabels, woods,
   type Bonuses, type GearSlot, type ProfessionStats, type Recipe, type Resource, type Skill,
 } from '../../frontend/src/gameData.ts'
 import { rollGatherYield } from './gathering.ts'
@@ -49,6 +49,10 @@ const leaderboardCategories = {
     column: 'farming_level',
     label: 'Farming Level',
   },
+  cooking: {
+    column: 'cooking_level',
+    label: 'Cooking Level',
+  },
   clicks: {
     column: 'total_clicks',
     label: 'Total Clicks',
@@ -88,16 +92,17 @@ type Enemy = { name: string; archetype: string; health: number; maxHealth: numbe
 type ShopUpgrade = 'medic' | 'scouting' | 'training' | 'fortitude' | 'autoBattle'
 type EventKind = 'achievement' | 'critical' | 'level' | 'rare' | 'yield' | 'worker'
 type GameEvent = { id: number; kind: EventKind; title: string; detail: string }
-type AchievementKind = 'level' | 'kills' | 'deaths' | 'tier' | 'gathered' | 'crafted' | 'workers' | 'woodLevel' | 'mineLevel' | 'fishLevel' | 'farmLevel' | 'gear' | 'actions' | 'goldEarned' | 'goldSpent'
+type AchievementKind = 'level' | 'kills' | 'deaths' | 'tier' | 'gathered' | 'crafted' | 'cooked' | 'workers' | 'woodLevel' | 'mineLevel' | 'fishLevel' | 'farmLevel' | 'cookLevel' | 'gear' | 'actions' | 'goldEarned' | 'goldSpent'
 type AchievementDefinition = { id: string; name: string; description: string; kind: AchievementKind; goal: number; reward: number; icon: string; titleReward?: string }
 type GatherJob = { resourceId: string; startedAt: number; endsAt: number; critical: boolean; duration: number }
 type CraftJob = { recipeId: string; startedAt: number; endsAt: number; duration: number; receipt?: string }
+type CookingJob = { recipeId: string; startedAt: number; endsAt: number; duration: number; receipt?: string }
 type TimedState = { startedAt: number; endsAt: number }
 type FactionId = 'wardens' | 'delvers' | 'vanguard'
 type FactionProgress = { reputation: number; rank: number }
 type DailyMetric = 'kills' | 'gathered' | 'crafted' | 'actions' | 'goldEarned'
 type DailyState = { date: string; baseline: Record<DailyMetric, number>; completed: string[] }
-type ProgressSnapshot = { at: number; gold: number; xp: number; level: number; kills: number; gathered: number; crafted: number; inventory: Record<string, number>; ownedGear: string[] }
+type ProgressSnapshot = { at: number; gold: number; xp: number; level: number; kills: number; gathered: number; crafted: number; cooked: number; inventory: Record<string, number>; ownedGear: string[] }
 type DetectorRewardKind = 'empty' | 'gold' | 'material' | 'rare' | 'gear'
 type DetectorReward = { kind: DetectorRewardKind; label: string; detail: string; icon: string }
 type DetectorTile = { id: number; revealed: boolean; reward: DetectorReward | null }
@@ -120,6 +125,7 @@ type Game = {
   equipment: Record<GearSlot, string | undefined>
   professions: Record<Skill, Profession>
   craftingProfession: Profession
+  cookingProfession: Profession
   resourceMastery: Record<string, number>
   jobs: Partial<Record<Skill, GatherJob>>
   workerAssignments: Record<string, number>
@@ -139,6 +145,7 @@ type Game = {
   recovery: TimedState | null
   enemyLoad: TimedState | null
   crafting: CraftJob | null
+  cooking: CookingJob | null
   events: GameEvent[]
   nextEventId: number
   lifetime: LifetimeStats
@@ -154,6 +161,7 @@ type LifetimeStats = {
   deaths: number
   gathered: number
   crafted: number
+  cooked: number
   totalClicks: number
   manualGathers: number
   battlesStarted: number
@@ -165,6 +173,8 @@ type LifetimeStats = {
   goldSpent: number
   craftingMaterialsSaved: number
   craftingBonusOutputs: number
+  cookingIngredientsSaved: number
+  cookingBonusDishes: number
 }
 
 type Action =
@@ -173,6 +183,8 @@ type Action =
   | { type: 'setEnemyTier'; tier: number }
   | { type: 'gather'; resourceId: string }
   | { type: 'craft'; recipeId: string }
+  | { type: 'cook'; recipeId: string }
+  | { type: 'eatFood'; item: string }
   | { type: 'assignWorker'; resourceId: string; change: number }
   | { type: 'buyWorker' }
   | { type: 'buyUpgrade'; upgradeId: ShopUpgrade }
@@ -238,11 +250,14 @@ const achievementDefinitions: AchievementDefinition[] = [
   { id: 'gatherThousand', name: 'Master Harvester', description: 'Gather 1,000 materials.', kind: 'gathered', goal: 1000, reward: 600, icon: '⛏️' },
   { id: 'firstCraft', name: 'Spark of Industry', description: 'Complete your first recipe.', kind: 'crafted', goal: 1, reward: 35, icon: '🔨' },
   { id: 'forgeTen', name: 'Forge Regular', description: 'Complete 10 recipes.', kind: 'crafted', goal: 10, reward: 150, icon: '🔥' },
+  { id: 'firstMeal', name: 'First Course', description: 'Cook your first healing food.', kind: 'cooked', goal: 1, reward: 35, icon: '🍲' },
+  { id: 'cookTenMeals', name: 'Camp Cook', description: 'Cook 10 healing foods.', kind: 'cooked', goal: 10, reward: 150, icon: '🥘' },
   { id: 'crew', name: 'A Small Crew', description: 'Own 3 workers.', kind: 'workers', goal: 3, reward: 250, icon: '♟️' },
   { id: 'lumberFive', name: 'Forest Adept', description: 'Reach woodcutting level 5.', kind: 'woodLevel', goal: 5, reward: 100, icon: '🌲' },
   { id: 'mineFive', name: 'Deep Delver', description: 'Reach mining level 5.', kind: 'mineLevel', goal: 5, reward: 100, icon: '💎' },
   { id: 'fishFive', name: 'River Regular', description: 'Reach fishing level 5.', kind: 'fishLevel', goal: 5, reward: 100, icon: '🎣' },
   { id: 'farmFive', name: 'Green Thumb', description: 'Reach farming level 5.', kind: 'farmLevel', goal: 5, reward: 100, icon: '🌱' },
+  { id: 'cookFive', name: 'Kitchen Hand', description: 'Reach cooking level 5.', kind: 'cookLevel', goal: 5, reward: 100, icon: '🔪' },
   { id: 'gearFive', name: 'Well Equipped', description: 'Own 5 crafted or starter items.', kind: 'gear', goal: 5, reward: 100, icon: '🛡️' },
   { id: 'levelTen', name: 'Veteran Adventurer', description: 'Reach player level 10.', kind: 'level', goal: 10, reward: 400, icon: '🏅' },
   { id: 'levelFifteen', name: 'Battle-Hardened', description: 'Reach player level 15.', kind: 'level', goal: 15, reward: 700, icon: '🗡️' },
@@ -262,6 +277,7 @@ const achievementDefinitions: AchievementDefinition[] = [
   { id: 'craftFifty', name: 'Master Artisan', description: 'Complete 50 recipes.', kind: 'crafted', goal: 50, reward: 900, icon: '⚒️' },
   { id: 'craftHundred', name: 'Emberwright', description: 'Complete 100 recipes.', kind: 'crafted', goal: 100, reward: 1800, icon: '🛠️' },
   { id: 'craftFiveHundred', name: 'Forge Eternal', description: 'Complete 500 recipes.', kind: 'crafted', goal: 500, reward: 6000, icon: '🌋', titleReward: 'Master of the Forge' },
+  { id: 'cookHundredMeals', name: 'Feast Maker', description: 'Cook 100 healing foods.', kind: 'cooked', goal: 100, reward: 1800, icon: '🍽️', titleReward: 'Master Chef' },
   { id: 'sixWorkers', name: 'Growing Company', description: 'Own 6 workers.', kind: 'workers', goal: 6, reward: 700, icon: '👷' },
   { id: 'tenWorkers', name: 'Industrial Power', description: 'Own 10 workers.', kind: 'workers', goal: 10, reward: 1800, icon: '🏭', titleReward: 'Guildmaster' },
   { id: 'twentyWorkers', name: 'A Realm at Work', description: 'Own 20 workers.', kind: 'workers', goal: 20, reward: 6500, icon: '🏙️', titleReward: 'Lord of Industry' },
@@ -284,6 +300,8 @@ const achievementDefinitions: AchievementDefinition[] = [
   { id: 'farmTen', name: 'Seasoned Farmer', description: 'Reach farming level 10.', kind: 'farmLevel', goal: 10, reward: 400, icon: '🌾' },
   { id: 'farmTwenty', name: 'Keeper of the Harvest', description: 'Reach farming level 20.', kind: 'farmLevel', goal: 20, reward: 1200, icon: '🚜', titleReward: 'Harvestkeeper' },
   { id: 'farmFifty', name: 'The Eternal Harvest', description: 'Reach farming level 50.', kind: 'farmLevel', goal: 50, reward: 8000, icon: '🌻', titleReward: 'World Gardener' },
+  { id: 'cookTen', name: 'Seasoned Cook', description: 'Reach cooking level 10.', kind: 'cookLevel', goal: 10, reward: 400, icon: '🍳' },
+  { id: 'cookTwenty', name: 'Emberfall Chef', description: 'Reach cooking level 20.', kind: 'cookLevel', goal: 20, reward: 1200, icon: '👨‍🍳', titleReward: 'Ember Chef' },
   { id: 'gearTen', name: 'Walking Arsenal', description: 'Own 10 pieces of equipment.', kind: 'gear', goal: 10, reward: 900, icon: '🛡️' },
   { id: 'gearFifteen', name: 'Relic Keeper', description: 'Own 15 pieces of equipment.', kind: 'gear', goal: 15, reward: 2500, icon: '⚜️', titleReward: 'Keeper of Relics' },
   { id: 'deathsTwentyFive', name: 'Still Standing', description: 'Survive 25 defeats.', kind: 'deaths', goal: 25, reward: 1000, icon: '🩹', titleReward: 'The Undying' },
@@ -403,6 +421,8 @@ function deserializeGame(value: unknown): Game {
     },
 
     craftingProfession: stored.craftingProfession ?? { level: 1, xp: 0 },
+    cookingProfession: stored.cookingProfession ?? { level: 1, xp: 0 },
+    cooking: stored.cooking ?? null,
     autoBattle: stored.autoBattle ?? false,
     ownedGear: [...new Set([...(stored.ownedGear ?? []), 'wornFishingRod', 'wornFarmingHoe'])],
     unlockedGear: [...new Set([...(stored.unlockedGear ?? stored.ownedGear ?? []), 'wornFishingRod', 'wornFarmingHoe'])],
@@ -481,6 +501,9 @@ async function saveGame(
         farming_level:
           game.professions.farming.level,
 
+        cooking_level:
+          game.cookingProfession.level,
+
         total_clicks: game.lifetime.totalClicks,
         monsters_killed: game.lifetime.kills,
         deaths: game.lifetime.deaths,
@@ -504,6 +527,7 @@ async function saveGame(
 function xpNeeded(game: Game) { return playerXpNeeded(game.level) }
 function professionXpNeeded(game: Game, skill: Skill) { return professionRequirement(game.professions[skill].level) }
 function craftingXpNeeded(game: Game) { return craftingRequirement(game.craftingProfession.level) }
+function cookingXpNeeded(game: Game) { return craftingRequirement(game.cookingProfession.level) }
 function levelWorkerRewardCount(level: number) { return (level >= 2 ? 1 : 0) + Math.floor(level / 5) }
 function legacyLevelWorkerRewardCount(level: number) { return (level >= 2 ? 1 : 0) + Math.floor(level / 10) }
 function craftingStats(game: Game) {
@@ -512,6 +536,14 @@ function craftingStats(game: Game) {
     speed: Math.min(45, (level - 1) * 2),
     conservationChance: Math.min(20, Math.floor((level - 1) / 2) * 2),
     bonusOutputChance: Math.min(15, Math.floor((level - 1) / 3) * 2.5),
+  }
+}
+function cookingStats(game: Game) {
+  const level = game.cookingProfession.level
+  return {
+    speed: Math.min(45, (level - 1) * 2),
+    conservationChance: Math.min(20, Math.floor((level - 1) / 2) * 2),
+    bonusDishChance: Math.min(15, Math.floor((level - 1) / 3) * 2.5),
   }
 }
 function recipeLevel(recipe: Recipe, seen = new Set<string>()): number {
@@ -530,7 +562,9 @@ function itemSellPrice(item: string) {
   const rareMaterial = rareMaterials.find(candidate => candidate.name === item)
   if (rareMaterial) return rareMaterial.sellPrice
   const recipe = recipeData.find(candidate => candidate.outputItem === item)
-  return recipe ? Math.max(2, recipeLevel(recipe) * 3) : 1
+  if (recipe) return Math.max(2, recipeLevel(recipe) * 3)
+  const food = cookingRecipes.find(candidate => candidate.outputItem === item)
+  return food ? Math.max(3, food.tier * 5) : 1
 }
 
 function totalBonuses(game: Game): Bonuses {
@@ -683,8 +717,8 @@ function rollDetectorReward(game: Game): DetectorReward {
 function achievementProgress(game: Game, achievement: AchievementDefinition) {
   const values: Record<AchievementKind, number> = {
     level: game.level, kills: game.lifetime.kills, deaths: game.lifetime.deaths, tier: game.highestEnemyTier,
-    gathered: game.lifetime.gathered, crafted: game.lifetime.crafted, workers: game.workers,
-    woodLevel: game.professions.woodcutting.level, mineLevel: game.professions.mining.level, fishLevel: game.professions.fishing.level, farmLevel: game.professions.farming.level, gear: game.ownedGear.length,
+    gathered: game.lifetime.gathered, crafted: game.lifetime.crafted, cooked: game.lifetime.cooked, workers: game.workers,
+    woodLevel: game.professions.woodcutting.level, mineLevel: game.professions.mining.level, fishLevel: game.professions.fishing.level, farmLevel: game.professions.farming.level, cookLevel: game.cookingProfession.level, gear: game.ownedGear.length,
     actions: game.lifetime.totalClicks, goldEarned: game.lifetime.goldEarned, goldSpent: game.lifetime.goldSpent,
   }
   return Math.min(achievement.goal, values[achievement.kind])
@@ -846,6 +880,32 @@ function completeCraft(game: Game) {
   checkAchievements(game)
 }
 
+function completeCooking(game: Game) {
+  const cooking = game.cooking
+  game.cooking = null
+  if (!cooking) return
+  const recipe = cookingRecipes.find(candidate => candidate.id === cooking.recipeId)
+  if (!recipe) return
+
+  let quantity = 1
+  if (Math.random() * 100 < cookingStats(game).bonusDishChance) {
+    quantity++
+    game.lifetime.cookingBonusDishes++
+  }
+  game.inventory[recipe.outputItem] = (game.inventory[recipe.outputItem] || 0) + quantity
+  game.cookingProfession.xp += 8 + recipe.tier * 6
+  while (game.cookingProfession.xp >= cookingXpNeeded(game) && game.cookingProfession.level < 25) {
+    game.cookingProfession.xp -= cookingXpNeeded(game)
+    game.cookingProfession.level++
+    const level = game.cookingProfession.level
+    game.message = `Cooking reached level ${level}! New dishes may now be available.`
+    pushEvent(game, 'level', `Cooking level ${level}!`, 'Cooking speed, ingredient conservation, and bonus-dish chance improved')
+  }
+  game.lifetime.cooked += quantity
+  game.message = `${recipe.name} completed${quantity > 1 ? ' with a bonus dish' : ''} and added to your inventory.${cooking.receipt ? ` Ingredients: ${cooking.receipt}.` : ''}`
+  checkAchievements(game)
+}
+
 function finishVictory(game: Game, now: number) {
   const rewardXp = game.enemy.xp
   const rewardGold = game.enemy.gold
@@ -951,6 +1011,7 @@ function advanceGame(game: Game, now = Date.now()) {
       if (game.jobs[skill] && now >= game.jobs[skill]!.endsAt) completeGather(game, skill)
     })
   if (game.crafting && now >= game.crafting.endsAt) completeCraft(game)
+  if (game.cooking && now >= game.cooking.endsAt) completeCooking(game)
 
   allResources.forEach(resource => {
     const count = game.workerAssignments[resource.id] || 0
@@ -973,6 +1034,7 @@ function createLifetimeStats(): LifetimeStats {
     deaths: 0,
     gathered: 0,
     crafted: 0,
+    cooked: 0,
     totalClicks: 0,
     manualGathers: 0,
     battlesStarted: 0,
@@ -984,6 +1046,8 @@ function createLifetimeStats(): LifetimeStats {
     goldSpent: 0,
     craftingMaterialsSaved: 0,
     craftingBonusOutputs: 0,
+    cookingIngredientsSaved: 0,
+    cookingBonusDishes: 0,
   }
 }
 
@@ -1020,14 +1084,14 @@ function createGame(name: string): Game {
     player: { health: 100, baseMaxHealth: 100, baseAttack: 10, baseDefense: 3, baseAttackSpeed: 1800, baseRecoveryTime: 60000, baseEnemyLoadTime: 2000, basePassiveRegen: .2, regenBuffer: 0 },
     inventory: {}, ownedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe', 'wornFishingRod', 'wornFarmingHoe'], unlockedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe', 'wornFishingRod', 'wornFarmingHoe'],
     equipment: { weapon: 'rustySword', helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: 'crackedPickaxe', hatchet: 'wornHatchet', fishingRod: 'wornFishingRod', farmingHoe: 'wornFarmingHoe' },
-    professions: { woodcutting: { level: 1, xp: 0 }, mining: { level: 1, xp: 0 }, fishing: { level: 1, xp: 0 }, farming: { level: 1, xp: 0 } }, craftingProfession: { level: 1, xp: 0 }, resourceMastery: {}, jobs: {},
+    professions: { woodcutting: { level: 1, xp: 0 }, mining: { level: 1, xp: 0 }, fishing: { level: 1, xp: 0 }, farming: { level: 1, xp: 0 } }, craftingProfession: { level: 1, xp: 0 }, cookingProfession: { level: 1, xp: 0 }, resourceMastery: {}, jobs: {},
     workerAssignments: {}, workerProgress: {}, workers: 0, levelRewardWorkers: 0, shopUpgrades: { medic: 0, scouting: 0, training: 0, fortitude: 0, autoBattle: 0 },
     unlockedAchievements: new Set(), titleAchievementId: null, alliedFaction: null, factions: { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } }, daily: createDailyState(createLifetimeStats()), metalDetector: createMetalDetector(now),
     lifetime: createLifetimeStats(),
     enemyTier: 1, highestEnemyTier: 1, enemy: { name: 'Loading...', archetype: '', health: 0, maxHealth: 1, attack: 0, defense: 0, attackSpeed: 0, xp: 0, gold: 0 },
-    battleActive: false, autoBattle: false, nextPlayerAttackAt: 0, nextEnemyAttackAt: 0, recovery: null, enemyLoad: null, crafting: null,
+    battleActive: false, autoBattle: false, nextPlayerAttackAt: 0, nextEnemyAttackAt: 0, recovery: null, enemyLoad: null, crafting: null, cooking: null,
     events: [], nextEventId: 1,
-    progressSnapshot: { at: now, gold: 0, xp: 0, level: 1, kills: 0, gathered: 0, crafted: 0, inventory: {}, ownedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe', 'wornFishingRod', 'wornFarmingHoe'] },
+    progressSnapshot: { at: now, gold: 0, xp: 0, level: 1, kills: 0, gathered: 0, crafted: 0, cooked: 0, inventory: {}, ownedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe', 'wornFishingRod', 'wornFarmingHoe'] },
   }
   startEnemyLoad(game, now, 'Loading your first enemy...')
   games.set(game.id, game)
@@ -1117,6 +1181,42 @@ function performAction(game: Game, action: Action, now: number) {
       const duration = recipe.duration * GAME_PACE_MULTIPLIER * (1 - craftStats.speed / 100)
       game.crafting = { recipeId: recipe.id, startedAt: now, endsAt: now + duration * 1000, duration, receipt: receipt.join(' · ') }
       game.message = `Crafting ${recipe.name}... Used ${receipt.join(' · ')}.`
+      break
+    }
+    case 'cook': {
+      const recipe = cookingRecipes.find(candidate => candidate.id === action.recipeId)
+      if (!recipe) reject('Unknown cooking recipe.')
+      if (game.cookingProfession.level < recipe.tier) reject(`Requires cooking level ${recipe.tier}.`)
+      if (game.cooking) reject('Another dish is already being cooked.')
+      if (!Object.entries(recipe.costs).every(([item, cost]) => (game.inventory[item] || 0) >= cost)) reject('Not enough ingredients.')
+      const stats = cookingStats(game)
+      const receipt: string[] = []
+      Object.entries(recipe.costs).forEach(([item, cost]) => {
+        const before = Number(game.inventory[item] || 0)
+        const saved = Math.random() * 100 < stats.conservationChance ? 1 : 0
+        const spent = Math.max(0, Number(cost) - saved)
+        game.inventory[item] = before - spent
+        if (!Number.isFinite(game.inventory[item]) || game.inventory[item] < 0) reject(`Invalid inventory state for ${item}.`)
+        game.lifetime.cookingIngredientsSaved += saved
+        receipt.push(`${item}: ${before}→${game.inventory[item]}${saved ? ' (1 conserved)' : ''}`)
+      })
+      const duration = recipe.duration * GAME_PACE_MULTIPLIER * (1 - stats.speed / 100)
+      game.cooking = { recipeId: recipe.id, startedAt: now, endsAt: now + duration * 1000, duration, receipt: receipt.join(' · ') }
+      game.message = `Cooking ${recipe.name}... Used ${receipt.join(' · ')}.`
+      break
+    }
+    case 'eatFood': {
+      if (typeof action.item !== 'string') reject('Choose a food to eat.')
+      const recipe = cookingRecipes.find(candidate => candidate.outputItem === action.item)
+      if (!recipe) reject('That item is not edible food.')
+      if ((game.inventory[action.item] || 0) < 1) reject(`You do not have any ${action.item}.`)
+      if (game.recovery) reject('Finish recovering before eating food.')
+      const maximumHealth = combatStats(game).maxHealth
+      if (game.player.health >= maximumHealth) reject('Your health is already full.')
+      game.inventory[action.item]--
+      const healed = Math.min(recipe.healing, maximumHealth - game.player.health)
+      game.player.health = Math.min(maximumHealth, game.player.health + recipe.healing)
+      game.message = `You ate ${action.item} and restored ${Math.round(healed)} health.`
       break
     }
     case 'assignWorker': {
@@ -1300,6 +1400,11 @@ function publicState(game: Game, now = Date.now()) {
     progress: Math.min(100, Math.max(0, (now - game.crafting.startedAt) / (game.crafting.endsAt - game.crafting.startedAt) * 100)),
     remaining: Math.max(0, (game.crafting.endsAt - now) / 1000),
   } : null
+  const cooking = game.cooking ? {
+    id: game.cooking.recipeId,
+    progress: Math.min(100, Math.max(0, (now - game.cooking.startedAt) / (game.cooking.endsAt - game.cooking.startedAt) * 100)),
+    remaining: Math.max(0, (game.cooking.endsAt - now) / 1000),
+  } : null
   const detectorDrilling = game.metalDetector.drilling ? {
     ...game.metalDetector.drilling,
     progress: Math.min(100, Math.max(0, (now - game.metalDetector.drilling.startedAt) / (game.metalDetector.drilling.endsAt - game.metalDetector.drilling.startedAt) * 100)),
@@ -1329,6 +1434,13 @@ function publicState(game: Game, now = Date.now()) {
       materialsSaved: game.lifetime.craftingMaterialsSaved,
       bonusOutputs: game.lifetime.craftingBonusOutputs,
     },
+    cookingProfession: { ...game.cookingProfession, xpNeeded: cookingXpNeeded(game) },
+    cookingStats: {
+      ...cookingStats(game),
+      totalCooked: game.lifetime.cooked,
+      ingredientsSaved: game.lifetime.cookingIngredientsSaved,
+      bonusDishes: game.lifetime.cookingBonusDishes,
+    },
     recipeLevels: Object.fromEntries(recipeData.map(recipe => [recipe.id, recipeLevel(recipe)])),
     professionStats: { woodcutting: publicProfessionStats(game, 'woodcutting'), mining: publicProfessionStats(game, 'mining'), fishing: publicProfessionStats(game, 'fishing'), farming: publicProfessionStats(game, 'farming') },
     effectiveDurations: Object.fromEntries(allResources.map(resource => [resource.id, effectiveDuration(game, resource)])),
@@ -1342,7 +1454,7 @@ function publicState(game: Game, now = Date.now()) {
     dailyObjectives: dailyObjectives(game).map(objective => ({ ...objective, reward: Math.round(objective.reward * .5), progress: Math.min(objective.target, Math.max(0, dailyMetricValues(game.lifetime)[objective.metric] - game.daily.baseline[objective.metric])), completed: game.daily.completed.includes(objective.id) })),
     dailyResetAt: Date.parse(`${game.daily.date}T00:00:00Z`) + 86_400_000,
     shopUpgradeCosts: Object.fromEntries(shopUpgradeDetails.map(upgrade => [upgrade.id, shopUpgradeCost(game, upgrade)])),
-    crafting, nextGearIds: nextGearIds(game),
+    crafting, cooking, nextGearIds: nextGearIds(game),
     metalDetector: {
       ...game.metalDetector,
       maxCharges: DETECTOR_MAX_CHARGES,
@@ -1365,6 +1477,7 @@ type OfflineProgress = {
   kills: number
   gathered: number
   crafted: number
+  cooked: number
   items: Array<{ item: string; quantity: number }>
   gear: Array<{ id: string; name: string; icon: string }>
 }
@@ -1378,6 +1491,7 @@ function progressSnapshot(game: Game, at = Date.now()): ProgressSnapshot {
     kills: game.lifetime?.kills ?? 0,
     gathered: game.lifetime?.gathered ?? 0,
     crafted: game.lifetime?.crafted ?? 0,
+    cooked: game.lifetime?.cooked ?? 0,
     inventory: { ...(game.inventory ?? {}) },
     ownedGear: [...(game.ownedGear ?? [])],
   }
@@ -1406,6 +1520,7 @@ function captureOfflineProgress(game: Game, now: number): { state: ReturnType<ty
       kills: Math.max(0, game.lifetime.kills - before.kills),
       gathered: Math.max(0, game.lifetime.gathered - before.gathered),
       crafted: Math.max(0, game.lifetime.crafted - before.crafted),
+      cooked: Math.max(0, game.lifetime.cooked - (before.cooked ?? 0)),
       items,
       gear: game.ownedGear
         .filter(id => !(before.ownedGear ?? []).includes(id))
@@ -1414,7 +1529,7 @@ function captureOfflineProgress(game: Game, now: number): { state: ReturnType<ty
   }
 }
 
-const config = { woods, rocks, fishingSpots, farmingPlots, allResources, rareMaterials, gearCatalog, recipes: recipeData, slotLabels, storePaths, shopUpgradeDetails, factionDefinitions, googleClientId }
+const config = { woods, rocks, fishingSpots, farmingPlots, allResources, rareMaterials, gearCatalog, recipes: recipeData, cookingRecipes, slotLabels, storePaths, shopUpgradeDetails, factionDefinitions, googleClientId }
 
 function passwordHash(password: string, salt: string) {
   return scryptSync(password, salt, 64).toString('hex')
@@ -2019,6 +2134,7 @@ app.get(
         mining_level,
         fishing_level,
         farming_level,
+        cooking_level,
         total_clicks,
         monsters_killed,
         deaths,

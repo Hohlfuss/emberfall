@@ -13,7 +13,8 @@ Run these files in the Supabase SQL editor:
 3. `backend/display-name-uniqueness-schema.sql` after resolving any duplicates reported by its diagnostic query.
 4. `backend/fishing-schema.sql` to add fishing to leaderboard statistics.
 5. `backend/farming-schema.sql` to add farming to leaderboard statistics.
-6. `backend/auction-schema.sql` if the auction house has not already been created.
+6. `backend/cooking-schema.sql` to add cooking to leaderboard statistics.
+7. `backend/auction-schema.sql` if the auction house has not already been created.
 
 Use the Supabase **service role/secret key** on Render, not a browser publishable key. Never add that secret to `frontend/.env` or commit it.
 

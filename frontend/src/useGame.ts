@@ -1,5 +1,5 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import type { Gear, GearSlot, Page, ProfessionStats, RareMaterial, Recipe, Resource, Skill } from './gameData'
+import type { CookingRecipe, Gear, GearSlot, Page, ProfessionStats, RareMaterial, Recipe, Resource, Skill } from './gameData'
 
 type ShopUpgradeId = 'medic' | 'scouting' | 'training' | 'fortitude' | 'autoBattle'
 type GameEvent = { id: number; kind: 'achievement' | 'critical' | 'level' | 'rare' | 'yield' | 'worker'; title: string; detail: string }
@@ -18,6 +18,7 @@ type GameConfig = {
   rareMaterials: RareMaterial[]
   gearCatalog: Record<string, Gear>
   recipes: Recipe[]
+  cookingRecipes: CookingRecipe[]
   slotLabels: Record<GearSlot, string>
   storePaths: StorePath[]
   shopUpgradeDetails: ShopUpgradeDetail[]
@@ -34,6 +35,8 @@ type ServerState = {
   professions: Record<Skill, { level: number; xp: number; xpNeeded: number }>
   craftingProfession: { level: number; xp: number; xpNeeded: number }
   craftingStats: { speed: number; conservationChance: number; bonusOutputChance: number; totalCrafts: number; materialsSaved: number; bonusOutputs: number }
+  cookingProfession: { level: number; xp: number; xpNeeded: number }
+  cookingStats: { speed: number; conservationChance: number; bonusDishChance: number; totalCooked: number; ingredientsSaved: number; bonusDishes: number }
   recipeLevels: Record<string, number>
   professionStats: Record<Skill, ServerProfessionStats>
   effectiveDurations: Record<string, number>
@@ -45,13 +48,14 @@ type ServerState = {
   equipment: Record<GearSlot, string | undefined>; ownedGear: string[]; unlockedGear: string[]; gearSellPrices: Record<string, number>
   shopUpgrades: Record<ShopUpgradeId, number>; shopUpgradeCosts: Record<ShopUpgradeId, number>
   crafting: { id: string; progress: number; remaining: number } | null
+  cooking: { id: string; progress: number; remaining: number } | null
   nextGearIds: string[]; achievements: Achievement[]; events: GameEvent[]
   alliedFaction: FactionId | null; factions: Record<FactionId, { reputation: number; rank: number }>
   dailyObjectives: Array<{ id: string; label: string; target: number; reward: number; icon: string; progress: number; completed: boolean }>; dailyResetAt: number
   metalDetector: MetalDetectorState
 }
 type Toast = { id: number; kind: GameEvent['kind']; title: string; detail: string }
-type LeaderboardCategory = 'level' | 'gold' | 'woodcutting' | 'mining' | 'fishing' | 'farming' | 'clicks' | 'kills' | 'gathered' | 'crafted'
+type LeaderboardCategory = 'level' | 'gold' | 'woodcutting' | 'mining' | 'fishing' | 'farming' | 'cooking' | 'clicks' | 'kills' | 'gathered' | 'crafted'
 type LeaderboardEntry = {
   rank: number
   username: string
@@ -76,7 +80,7 @@ export type MetalDetectorState = {
   drilling: null | { gold: number; goldRemaining: number; startDepth: number; targetDepth: number; progress: number; remaining: number }
 }
 export type OfflineProgress = {
-  durationMs: number; gold: number; xp: number; levels: number; kills: number; gathered: number; crafted: number
+  durationMs: number; gold: number; xp: number; levels: number; kills: number; gathered: number; crafted: number; cooked: number
   items: Array<{ item: string; quantity: number }>
   gear: Array<{ id: string; name: string; icon: string }>
 }
@@ -91,7 +95,7 @@ function apiUrl(path: string): string {
 }
 
 export function useGame() {
-  const allTabs: Page[] = ['battle', 'woodcutting', 'mining', 'fishing', 'farming', 'crafting', 'metal detector', 'workers', 'inventory', 'achievements', 'factions', 'auction', 'high scores', 'shop']
+  const allTabs: Page[] = ['battle', 'woodcutting', 'mining', 'fishing', 'farming', 'crafting', 'cooking', 'metal detector', 'workers', 'inventory', 'achievements', 'factions', 'auction', 'high scores', 'shop']
   const page = ref<Page>('battle')
   const authMode = ref<'login' | 'register'>('login')
   const authUsername = ref('')
@@ -132,6 +136,7 @@ export function useGame() {
   let chatTimer: ReturnType<typeof setInterval> | undefined
   let requestRunning = false
   let craftRequestRunning = false
+  let cookingRequestRunning = false
   let sessionRestoreAttempted = false
 
   const emptyProfessionStats: ProfessionStats = { speed: 0, bonusYieldPercent: 1, critChance: 0, critPower: 1.5 }
@@ -207,6 +212,9 @@ export function useGame() {
   const craftingProfession = computed(() => state.value?.craftingProfession || { level: 1, xp: 0, xpNeeded: 77 })
   const craftingStats = computed(() => state.value?.craftingStats || { speed: 0, conservationChance: 0, bonusOutputChance: 0, totalCrafts: 0, materialsSaved: 0, bonusOutputs: 0 })
   const craftingId = computed(() => state.value?.crafting?.id || '')
+  const cookingProfession = computed(() => state.value?.cookingProfession || { level: 1, xp: 0, xpNeeded: 77 })
+  const cookingStats = computed(() => state.value?.cookingStats || { speed: 0, conservationChance: 0, bonusDishChance: 0, totalCooked: 0, ingredientsSaved: 0, bonusDishes: 0 })
+  const cookingId = computed(() => state.value?.cooking?.id || '')
   const recipeLevels = computed(() => state.value?.recipeLevels || {})
   const metalDetector = computed<MetalDetectorState>(() => state.value?.metalDetector || {
     unlocked: false, charges: 0, maxCharges: 10, rechargeMs: 600_000, nextChargeIn: 0,
@@ -233,6 +241,11 @@ export function useGame() {
     remaining: state.value?.crafting?.id === recipe.id ? state.value.crafting.remaining : undefined,
   })))
   const craftingRecipes = computed(() => recipeList.value.filter(recipe => !recipe.outputGear || Boolean(state.value?.nextGearIds.includes(recipe.outputGear))))
+  const cookingRecipeList = computed(() => (config.value?.cookingRecipes || []).map(recipe => ({
+    ...recipe,
+    progress: state.value?.cooking?.id === recipe.id ? state.value.cooking.progress : 0,
+    remaining: state.value?.cooking?.id === recipe.id ? state.value.cooking.remaining : undefined,
+  })))
 
   const storeListings = computed(() => storePaths.value.map(path => {
     const index = path.items.findIndex(id => !ownedGear.value.includes(id))
@@ -248,6 +261,7 @@ export function useGame() {
     const oreNames = new Set(rocks.value.filter(resource => resource.family === 'ore').map(resource => resource.item))
     const fishNames = new Set(fishingSpots.value.map(resource => resource.item))
     const cropNames = new Set(farmingPlots.value.map(resource => resource.item))
+    const foodNames = new Set(cookingRecipeList.value.map(recipe => recipe.outputItem))
     const owned = Object.entries(inventory.value).filter(([, count]) => count > 0)
     return [
       { name: 'Logs', icon: '🌲', items: owned.filter(([item]) => logNames.has(item)) },
@@ -255,7 +269,8 @@ export function useGame() {
       { name: 'Ores', icon: '⛏️', items: owned.filter(([item]) => oreNames.has(item)) },
       { name: 'Fish', icon: '🐟', items: owned.filter(([item]) => fishNames.has(item)) },
       { name: 'Crops', icon: '🌾', items: owned.filter(([item]) => cropNames.has(item)) },
-      { name: 'Refined & rare', icon: '💎', items: owned.filter(([item]) => !logNames.has(item) && !rockNames.has(item) && !oreNames.has(item) && !fishNames.has(item) && !cropNames.has(item)) },
+      { name: 'Foods', icon: '🍲', items: owned.filter(([item]) => foodNames.has(item)) },
+      { name: 'Refined & rare', icon: '💎', items: owned.filter(([item]) => !logNames.has(item) && !rockNames.has(item) && !oreNames.has(item) && !fishNames.has(item) && !cropNames.has(item) && !foodNames.has(item)) },
     ]
   })
 
@@ -633,7 +648,7 @@ export function useGame() {
     if (document.hidden) return 5000
     const current = state.value
     const hasTimedActivity = Boolean(
-      current?.battleStarted || current?.recovering || current?.enemyLoading || current?.crafting ||
+      current?.battleStarted || current?.recovering || current?.enemyLoading || current?.crafting || current?.cooking ||
       current?.metalDetector.drilling || Object.values(current?.jobs || {}).some(Boolean) ||
       (page.value === 'workers' && Object.values(current?.workerAssignments || {}).some(count => count > 0)),
     )
@@ -666,6 +681,13 @@ export function useGame() {
     try { await sendAction({ type: 'craft', recipeId: recipe.id }) }
     finally { craftRequestRunning = false }
   }
+  async function cook(recipe: CookingRecipe) {
+    if (cookingRequestRunning) return
+    cookingRequestRunning = true
+    try { await sendAction({ type: 'cook', recipeId: recipe.id }) }
+    finally { cookingRequestRunning = false }
+  }
+  function eatFood(item: string) { void sendAction({ type: 'eatFood', item }) }
   function assignWorker(resource: Resource, change: number) { void sendAction({ type: 'assignWorker', resourceId: resource.id, change }) }
   function buyWorker() { void sendAction({ type: 'buyWorker' }) }
   function buyShopUpgrade(upgrade: ShopUpgradeDetail) { void sendAction({ type: 'buyUpgrade', upgradeId: upgrade.id }) }
@@ -697,13 +719,13 @@ export function useGame() {
     enemyTier, highestEnemyTier, enemy, battleStarted, autoBattle, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
     heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
     woods, rocks, fishingSpots, farmingPlots, allResources, rareMaterials, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, googleClientId, professions, jobs, inventory, sellPrices, resourceMastery,
-    workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId, craftingProfession, craftingStats, factionDefinitions, alliedFaction, factions, dailyObjectives, dailyResetAt, metalDetector,
-    craftingRecipes, recipeLevels, storeListings, materialGroups, toasts,
+    workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId, craftingProfession, craftingStats, cookingId, cookingProfession, cookingStats, factionDefinitions, alliedFaction, factions, dailyObjectives, dailyResetAt, metalDetector,
+    craftingRecipes, cookingRecipeList, recipeLevels, storeListings, materialGroups, toasts,
     leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
     chatMessages, chatOnline, chatError,
     auctionListings, auctionError, offlineProgress,
     professionStats, professionXpNeeded, isUnlocked, effectiveDuration, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip,
-    submitAuth, switchAuthMode, loginWithGoogle, submitDisplayName, startBattle, changeEnemyTier, gather, craft, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
+    submitAuth, switchAuthMode, loginWithGoogle, submitDisplayName, startBattle, changeEnemyTier, gather, craft, cook, eatFood, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
     displayNameRequired, displayNameDraft, displayNameError, displayNameLoading,
   }
 }

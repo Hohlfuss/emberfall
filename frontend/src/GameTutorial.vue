@@ -26,7 +26,12 @@ const steps = [
     tip: 'Crafting has its own level, speed bonuses, conservation, and double-output chance.',
   },
   {
-    icon: '⌁', eyebrow: 'STEP 5 · EXPLORATION', title: 'Dig for buried rewards',
+    icon: '🍲', eyebrow: 'STEP 5 · COOKING', title: 'Prepare healing food',
+    body: 'Cooking pairs fish and farm crops into tiered meals. Every dish can be eaten from the Cooking page to restore its listed amount of health.',
+    tip: 'Cooking levels improve recipe speed, ingredient conservation, and your chance to make a bonus dish.',
+  },
+  {
+    icon: '⌁', eyebrow: 'STEP 6 · EXPLORATION', title: 'Dig for buried rewards',
     body: 'The Metal Detector spends one charge to uncover a tile. It holds ten charges and restores one every ten minutes.',
     tip: 'Invest gold in the depth drill to reduce empty finds and improve reward and jackpot chances.',
   },
