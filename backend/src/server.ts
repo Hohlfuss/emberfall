@@ -22,6 +22,7 @@ import {
   detectorDepthGain, detectorEmptyChance, detectorJackpotChance, detectorRewardScale, rechargeDetectorCharges,
 } from './detector.ts'
 import { AUTO_EAT_COOLDOWN_MS, AUTO_EAT_HEALTH_THRESHOLD, autoEatReady, deathGoldPenalty, healOverTimeProgress, stackedHealOverTimeTiming, upgradedFoodHealing } from './combatFood.ts'
+import { sanitizeClanDescription, sanitizeClanMessage, sanitizeClanName, sanitizeClanVisibility, sanitizePlayerIdentifier, type ClanVisibility } from './clans.ts'
 import { supabase } from "../supabase.ts";
 import { canonicalDisplayName, googleUsernameCandidates, sanitizeDisplayName, verifyGoogleCredential } from './googleAuth.ts'
 
@@ -102,7 +103,7 @@ type CraftJob = { recipeId: string; startedAt: number; endsAt: number; duration:
 type CookingJob = { recipeId: string; startedAt: number; endsAt: number; duration: number; receipt?: string }
 type FoodHealOverTime = { item: string; totalHealing: number; appliedHealing: number; startedAt: number; endsAt: number }
 type TimedState = { startedAt: number; endsAt: number }
-type FactionId = 'wardens' | 'delvers' | 'vanguard'
+type FactionId = 'wardens' | 'delvers' | 'tidecallers' | 'harvesters' | 'artificers' | 'vanguard'
 type FactionProgress = { reputation: number; rank: number }
 type DailyMetric = 'kills' | 'gathered' | 'crafted' | 'actions' | 'goldEarned'
 type DailyState = { date: string; baseline: Record<DailyMetric, number>; completed: string[] }
@@ -216,8 +217,15 @@ type Action =
 const factionDefinitions = [
   { id: 'wardens', name: 'Verdant Wardens', icon: '🌿', unlockLevel: 3, description: 'Protectors of ancient forests. Reputation comes from woodcutting.', ranks: [50, 175, 450, 900], rewards: ['+5% woodcutting speed', '+20% woodcutting bonus yield', '+5% woodcutting crit chance', '+15% woodcutting speed'] },
   { id: 'delvers', name: 'Deep Delvers', icon: '💎', unlockLevel: 5, description: 'Seekers of secrets beneath the mountains. Reputation comes from mining.', ranks: [50, 175, 450, 900], rewards: ['+5% mining speed', '+20% mining bonus yield', '+5% mining crit chance', '+15% mining speed'] },
+  { id: 'tidecallers', name: 'Tidecallers', icon: '🌊', unlockLevel: 3, description: 'Keepers of Emberfall\'s rivers and deeps. Reputation comes from fishing.', ranks: [50, 175, 450, 900], rewards: ['+5% fishing speed', '+20% fishing bonus yield', '+5% fishing crit chance', '+15% fishing speed'] },
+  { id: 'harvesters', name: 'Golden Harvest', icon: '🌾', unlockLevel: 3, description: 'Growers who keep the realm fed. Reputation comes from farming.', ranks: [50, 175, 450, 900], rewards: ['+5% farming speed', '+20% farming bonus yield', '+5% farming crit chance', '+15% farming speed'] },
+  { id: 'artificers', name: 'Ember Artificers', icon: '⚒️', unlockLevel: 6, description: 'Masters of forge and hearth. Reputation comes from crafting and cooking.', ranks: [50, 175, 450, 900], rewards: ['+5% crafting and cooking speed', '+5% material and ingredient conservation', '+5% bonus output and bonus dish chance', '+15% crafting and cooking speed'] },
   { id: 'vanguard', name: 'Ember Vanguard', icon: '🔥', unlockLevel: 7, description: 'Monster hunters defending Emberfall. Reputation comes from victories.', ranks: [50, 175, 450, 900], rewards: ['+3 Attack', '+3 Defense', '+20 maximum health', '+8 Attack'] },
 ] as const
+
+function createFactionProgress(): Record<FactionId, FactionProgress> {
+  return Object.fromEntries(factionDefinitions.map(faction => [faction.id, { reputation: 0, rank: 0 }])) as Record<FactionId, FactionProgress>
+}
 
 const dailyObjectivePool = [
   { id: 'hunt5', metric: 'kills', label: 'Win 5 battles', target: 5, reward: 90, icon: '⚔️' },
@@ -347,6 +355,22 @@ type ChatMessage = {
   name: string
   message: string
   createdAt: string
+}
+
+type ClanRow = {
+  id: string
+  name: string
+  description: string
+  visibility: ClanVisibility
+  owner_username: string
+  created_at: string
+}
+
+type ClanMembershipRow = {
+  clan_id: string
+  username: string
+  role: 'owner' | 'member'
+  joined_at: string
 }
 
 const chatMessages: ChatMessage[] = []
@@ -502,8 +526,8 @@ function deserializeGame(value: unknown): Game {
       fishing: stored.professions?.fishing ?? { level: 1, xp: 0 },
       farming: stored.professions?.farming ?? { level: 1, xp: 0 },
     },
-    alliedFaction: stored.alliedFaction ?? null,
-    factions: stored.factions ?? { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } },
+    alliedFaction: factionDefinitions.some(faction => faction.id === stored.alliedFaction) ? stored.alliedFaction : null,
+    factions: { ...createFactionProgress(), ...(stored.factions ?? {}) },
     daily: stored.daily ?? createDailyState(stored.lifetime ?? createLifetimeStats()),
     metalDetector: normalizeMetalDetector(stored.metalDetector, storedAt, defeatedBosses.includes('buriedColossus')),
     titleAchievementId: validStoredTitle ? stored.titleAchievementId : null,
@@ -600,18 +624,20 @@ function levelWorkerRewardCount(level: number) { return (level >= 2 ? 1 : 0) + M
 function legacyLevelWorkerRewardCount(level: number) { return (level >= 2 ? 1 : 0) + Math.floor(level / 10) }
 function craftingStats(game: Game) {
   const level = game.craftingProfession.level
+  const bonuses = totalBonuses(game)
   return {
-    speed: Math.min(45, (level - 1) * 2),
-    conservationChance: Math.min(20, Math.floor((level - 1) / 2) * 2),
-    bonusOutputChance: Math.min(15, Math.floor((level - 1) / 3) * 2.5),
+    speed: Math.min(45, (level - 1) * 2) + (bonuses.craftingSpeed || 0),
+    conservationChance: Math.min(20, Math.floor((level - 1) / 2) * 2) + (bonuses.craftingConservation || 0),
+    bonusOutputChance: Math.min(15, Math.floor((level - 1) / 3) * 2.5) + (bonuses.craftingBonusOutput || 0),
   }
 }
 function cookingStats(game: Game) {
   const level = game.cookingProfession.level
+  const bonuses = totalBonuses(game)
   return {
-    speed: Math.min(45, (level - 1) * 2),
-    conservationChance: Math.min(20, Math.floor((level - 1) / 2) * 2),
-    bonusDishChance: Math.min(15, Math.floor((level - 1) / 3) * 2.5),
+    speed: Math.min(45, (level - 1) * 2) + (bonuses.cookingSpeed || 0),
+    conservationChance: Math.min(20, Math.floor((level - 1) / 2) * 2) + (bonuses.cookingConservation || 0),
+    bonusDishChance: Math.min(15, Math.floor((level - 1) / 3) * 2.5) + (bonuses.cookingBonusDish || 0),
   }
 }
 function foodHealing(game: Game, baseHealing: number) {
@@ -688,6 +714,17 @@ function totalBonuses(game: Game): Bonuses {
   const rank = faction ? game.factions[faction].rank : 0
   if (faction === 'wardens') { result.woodSpeed = (result.woodSpeed || 0) + (rank >= 1 ? 5 : 0) + (rank >= 4 ? 15 : 0); result.woodBonusYieldPercent = (result.woodBonusYieldPercent || 0) + (rank >= 2 ? 20 : 0); result.woodCrit = (result.woodCrit || 0) + (rank >= 3 ? 5 : 0) }
   if (faction === 'delvers') { result.miningSpeed = (result.miningSpeed || 0) + (rank >= 1 ? 5 : 0) + (rank >= 4 ? 15 : 0); result.miningBonusYieldPercent = (result.miningBonusYieldPercent || 0) + (rank >= 2 ? 20 : 0); result.miningCrit = (result.miningCrit || 0) + (rank >= 3 ? 5 : 0) }
+  if (faction === 'tidecallers') { result.fishingSpeed = (result.fishingSpeed || 0) + (rank >= 1 ? 5 : 0) + (rank >= 4 ? 15 : 0); result.fishingBonusYieldPercent = (result.fishingBonusYieldPercent || 0) + (rank >= 2 ? 20 : 0); result.fishingCrit = (result.fishingCrit || 0) + (rank >= 3 ? 5 : 0) }
+  if (faction === 'harvesters') { result.farmingSpeed = (result.farmingSpeed || 0) + (rank >= 1 ? 5 : 0) + (rank >= 4 ? 15 : 0); result.farmingBonusYieldPercent = (result.farmingBonusYieldPercent || 0) + (rank >= 2 ? 20 : 0); result.farmingCrit = (result.farmingCrit || 0) + (rank >= 3 ? 5 : 0) }
+  if (faction === 'artificers') {
+    const speed = (rank >= 1 ? 5 : 0) + (rank >= 4 ? 15 : 0)
+    result.craftingSpeed = (result.craftingSpeed || 0) + speed
+    result.cookingSpeed = (result.cookingSpeed || 0) + speed
+    result.craftingConservation = (result.craftingConservation || 0) + (rank >= 2 ? 5 : 0)
+    result.cookingConservation = (result.cookingConservation || 0) + (rank >= 2 ? 5 : 0)
+    result.craftingBonusOutput = (result.craftingBonusOutput || 0) + (rank >= 3 ? 5 : 0)
+    result.cookingBonusDish = (result.cookingBonusDish || 0) + (rank >= 3 ? 5 : 0)
+  }
   if (faction === 'vanguard') { result.attack = (result.attack || 0) + (rank >= 1 ? 3 : 0) + (rank >= 4 ? 8 : 0); result.defense = (result.defense || 0) + (rank >= 2 ? 3 : 0); result.maxHealth = (result.maxHealth || 0) + (rank >= 3 ? 20 : 0) }
   return result
 }
@@ -969,6 +1006,8 @@ function completeGather(game: Game, skill: Skill) {
   }
   if (resource.skill === 'woodcutting') gainFactionReputation(game, 'wardens', Math.max(1, resource.tier))
   if (resource.skill === 'mining') gainFactionReputation(game, 'delvers', Math.max(1, resource.tier))
+  if (resource.skill === 'fishing') gainFactionReputation(game, 'tidecallers', Math.max(1, resource.tier))
+  if (resource.skill === 'farming') gainFactionReputation(game, 'harvesters', Math.max(1, resource.tier))
   const completionVerb = resource.skill === 'fishing' ? 'Caught' : resource.skill === 'farming' ? 'Harvested' : 'Gathered'
   game.message = `${completionVerb} ${amount} × ${resource.item}${job.critical ? ` with a critical ${resource.skill === 'fishing' ? 'catch' : 'harvest'}` : ''}.`
 }
@@ -1000,6 +1039,7 @@ function completeCraft(game: Game) {
     pushEvent(game, 'level', `Crafting level ${level}!`, 'New recipes may now be available in the forge')
   }
   game.lifetime.crafted++
+  gainFactionReputation(game, 'artificers', Math.max(1, recipeLevel(recipe)))
   game.message = `${recipe.name} completed and added to your inventory.${craft.receipt ? ` Materials: ${craft.receipt}.` : ''}`
   checkAchievements(game)
 }
@@ -1026,6 +1066,7 @@ function completeCooking(game: Game) {
     pushEvent(game, 'level', `Cooking level ${level}!`, 'Cooking speed, ingredient conservation, and bonus-dish chance improved')
   }
   game.lifetime.cooked += quantity
+  gainFactionReputation(game, 'artificers', Math.max(1, recipe.tier))
   game.message = `${recipe.name} completed${quantity > 1 ? ' with a bonus dish' : ''} and added to your inventory.${cooking.receipt ? ` Ingredients: ${cooking.receipt}.` : ''}`
   checkAchievements(game)
 }
@@ -1252,7 +1293,7 @@ function createGame(name: string): Game {
     equipment: { weapon: 'rustySword', helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: 'crackedPickaxe', hatchet: 'wornHatchet', fishingRod: 'wornFishingRod', farmingHoe: 'wornFarmingHoe' },
     professions: { woodcutting: { level: 1, xp: 0 }, mining: { level: 1, xp: 0 }, fishing: { level: 1, xp: 0 }, farming: { level: 1, xp: 0 } }, craftingProfession: { level: 1, xp: 0 }, cookingProfession: { level: 1, xp: 0 }, resourceMastery: {}, jobs: {},
     workerAssignments: {}, workerProgress: {}, workers: 0, levelRewardWorkers: 0, shopUpgrades: { medic: 0, scouting: 0, training: 0, fortitude: 0, autoBattle: 0, autoEat: 0, healingPower: 0 }, selectedFood: null, autoEat: false, nextAutoEatAt: 0, foodHotQueue: [],
-    unlockedAchievements: new Set(), titleAchievementId: null, alliedFaction: null, factions: { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } }, daily: createDailyState(createLifetimeStats()), metalDetector: createMetalDetector(now),
+    unlockedAchievements: new Set(), titleAchievementId: null, alliedFaction: null, factions: createFactionProgress(), daily: createDailyState(createLifetimeStats()), metalDetector: createMetalDetector(now),
     lifetime: createLifetimeStats(),
     enemyTier: 1, highestEnemyTier: 1, encounterMode: 'normal', defeatedBosses: [], tierFiveAreasUnlocked: true, enemy: { name: 'Loading...', archetype: '', health: 0, maxHealth: 1, attack: 0, defense: 0, attackSpeed: 0, xp: 0, gold: 0 },
     battleActive: false, autoBattle: false, nextPlayerAttackAt: 0, nextEnemyAttackAt: 0, recovery: null, enemyLoad: null, crafting: null, cooking: null,
@@ -2235,6 +2276,366 @@ function onlineCount() {
       .map(session => session.username),
   ).size
 }
+
+async function clanMembership(username: string): Promise<ClanMembershipRow | null> {
+  const { data, error } = await supabase
+    .from('clan_members')
+    .select('clan_id, username, role, joined_at')
+    .eq('username', username)
+    .maybeSingle()
+  if (error) throw error
+  return data as ClanMembershipRow | null
+}
+
+async function playerNameMap(usernames: string[]): Promise<Map<string, string>> {
+  const uniqueUsernames = [...new Set(usernames)]
+  if (!uniqueUsernames.length) return new Map()
+  const { data, error } = await supabase.from('players').select('username, name').in('username', uniqueUsernames)
+  if (error) throw error
+  return new Map((data ?? []).map(player => [player.username, player.name || player.username]))
+}
+
+function clanOnlineCount(usernames: string[]) {
+  const members = new Set(usernames)
+  const cutoff = Date.now() - ONLINE_WINDOW_MS
+  return new Set([...tokens.values()]
+    .filter(session => session.lastSeen >= cutoff && members.has(session.username))
+    .map(session => session.username)).size
+}
+
+async function clanDetails(username: string) {
+  const membership = await clanMembership(username)
+  if (!membership) return null
+
+  const [clanResult, membersResult] = await Promise.all([
+    supabase.from('clans').select('*').eq('id', membership.clan_id).maybeSingle(),
+    supabase.from('clan_members').select('clan_id, username, role, joined_at').eq('clan_id', membership.clan_id).order('joined_at', { ascending: true }),
+  ])
+  if (clanResult.error) throw clanResult.error
+  if (membersResult.error) throw membersResult.error
+  if (!clanResult.data) return null
+
+  const clan = clanResult.data as ClanRow
+  const members = (membersResult.data ?? []) as ClanMembershipRow[]
+  const names = await playerNameMap([clan.owner_username, ...members.map(member => member.username)])
+  const onlineCutoff = Date.now() - ONLINE_WINDOW_MS
+  return {
+    id: clan.id,
+    name: clan.name,
+    description: clan.description,
+    visibility: clan.visibility,
+    ownerUsername: clan.owner_username,
+    ownerName: names.get(clan.owner_username) || clan.owner_username,
+    createdAt: clan.created_at,
+    memberCount: members.length,
+    role: membership.role,
+    online: clanOnlineCount(members.map(member => member.username)),
+    members: members.map(member => ({
+      username: member.username,
+      name: names.get(member.username) || member.username,
+      role: member.role,
+      joinedAt: member.joined_at,
+      online: [...tokens.values()].some(session => session.username === member.username && session.lastSeen >= onlineCutoff),
+    })),
+  }
+}
+
+async function publicClanSummaries() {
+  const { data, error } = await supabase
+    .from('clans')
+    .select('*')
+    .eq('visibility', 'public')
+    .order('created_at', { ascending: false })
+    .limit(100)
+  if (error) throw error
+  const clans = (data ?? []) as ClanRow[]
+  if (!clans.length) return []
+
+  const { data: memberRows, error: membersError } = await supabase
+    .from('clan_members')
+    .select('clan_id')
+    .in('clan_id', clans.map(clan => clan.id))
+  if (membersError) throw membersError
+  const counts = new Map<string, number>()
+  for (const member of memberRows ?? []) counts.set(member.clan_id, (counts.get(member.clan_id) || 0) + 1)
+  const names = await playerNameMap(clans.map(clan => clan.owner_username))
+  return clans.map(clan => ({
+    id: clan.id,
+    name: clan.name,
+    description: clan.description,
+    visibility: clan.visibility,
+    ownerUsername: clan.owner_username,
+    ownerName: names.get(clan.owner_username) || clan.owner_username,
+    createdAt: clan.created_at,
+    memberCount: counts.get(clan.id) || 0,
+  }))
+}
+
+async function clanInvitations(username: string) {
+  const { data, error } = await supabase
+    .from('clan_invitations')
+    .select('*')
+    .eq('invited_username', username)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  const invitations = data ?? []
+  if (!invitations.length) return []
+
+  const { data: clanRows, error: clansError } = await supabase
+    .from('clans')
+    .select('*')
+    .in('id', [...new Set(invitations.map(invitation => invitation.clan_id))])
+  if (clansError) throw clansError
+  const clans = new Map(((clanRows ?? []) as ClanRow[]).map(clan => [clan.id, clan]))
+  const names = await playerNameMap(invitations.map(invitation => invitation.invited_by_username))
+  return invitations.flatMap(invitation => {
+    const clan = clans.get(invitation.clan_id)
+    return clan ? [{
+      id: invitation.id,
+      clanId: clan.id,
+      clanName: clan.name,
+      clanVisibility: clan.visibility,
+      invitedByUsername: invitation.invited_by_username,
+      invitedByName: names.get(invitation.invited_by_username) || invitation.invited_by_username,
+      createdAt: invitation.created_at,
+    }] : []
+  })
+}
+
+async function clanSnapshot(username: string) {
+  const [clan, invitations, publicClans] = await Promise.all([
+    clanDetails(username),
+    clanInvitations(username),
+    publicClanSummaries(),
+  ])
+  return { clan, invitations, publicClans }
+}
+
+async function clanChatSnapshot(username: string) {
+  const membership = await clanMembership(username)
+  if (!membership) return { clan: null, messages: [], online: 0 }
+  const [clanResult, membersResult, messagesResult] = await Promise.all([
+    supabase.from('clans').select('id, name').eq('id', membership.clan_id).maybeSingle(),
+    supabase.from('clan_members').select('username').eq('clan_id', membership.clan_id),
+    supabase.from('clan_messages').select('*').eq('clan_id', membership.clan_id).order('created_at', { ascending: false }).limit(50),
+  ])
+  if (clanResult.error) throw clanResult.error
+  if (membersResult.error) throw membersResult.error
+  if (messagesResult.error) throw messagesResult.error
+  if (!clanResult.data) return { clan: null, messages: [], online: 0 }
+
+  const usernames = (membersResult.data ?? []).map(member => member.username)
+  const names = await playerNameMap((messagesResult.data ?? []).map(message => message.username))
+  return {
+    clan: { id: clanResult.data.id, name: clanResult.data.name },
+    online: clanOnlineCount(usernames),
+    messages: [...(messagesResult.data ?? [])].reverse().map(message => ({
+      id: message.id,
+      username: message.username,
+      name: names.get(message.username) || message.username,
+      message: message.message,
+      createdAt: message.created_at,
+    })),
+  }
+}
+
+function clanServerError(response: express.Response, error: unknown, fallback: string) {
+  console.error('Clan error:', error)
+  return response.status(500).json({ error: `${fallback} Apply backend/clan-schema.sql in Supabase first.` })
+}
+
+app.get('/api/clans', async (request, response) => {
+  const session = chatSession(request)
+  if (!session) return response.status(401).json({ error: 'Log in to view clans.' })
+  try {
+    return response.json(await clanSnapshot(session.username))
+  } catch (error) {
+    return clanServerError(response, error, 'Could not load clans.')
+  }
+})
+
+app.post('/api/clans', async (request, response) => {
+  const session = chatSession(request)
+  if (!session) return response.status(401).json({ error: 'Log in to create a clan.' })
+  try {
+    if (await clanMembership(session.username)) return response.status(409).json({ error: 'Leave your current clan before creating another.' })
+    const name = sanitizeClanName(request.body?.name)
+    const description = sanitizeClanDescription(request.body?.description)
+    const visibility = sanitizeClanVisibility(request.body?.visibility)
+    const clanId = randomUUID()
+    const { error } = await supabase.from('clans').insert({
+      id: clanId,
+      name,
+      description,
+      visibility,
+      owner_username: session.username,
+      created_at: new Date().toISOString(),
+    })
+    if (error?.code === '23505') return response.status(409).json({ error: 'That clan name is already taken.' })
+    if (error) throw error
+
+    const { error: memberError } = await supabase.from('clan_members').insert({
+      clan_id: clanId,
+      username: session.username,
+      role: 'owner',
+      joined_at: new Date().toISOString(),
+    })
+    if (memberError) {
+      await supabase.from('clans').delete().eq('id', clanId)
+      if (memberError.code === '23505') return response.status(409).json({ error: 'You already belong to a clan.' })
+      throw memberError
+    }
+    return response.status(201).json(await clanSnapshot(session.username))
+  } catch (error) {
+    if (error instanceof Error && /Clan name|description|public or invite-only/.test(error.message)) {
+      return response.status(400).json({ error: error.message })
+    }
+    return clanServerError(response, error, 'Could not create the clan.')
+  }
+})
+
+app.post('/api/clans/:id/join', async (request, response) => {
+  const session = chatSession(request)
+  if (!session) return response.status(401).json({ error: 'Log in to join a clan.' })
+  try {
+    if (await clanMembership(session.username)) return response.status(409).json({ error: 'You already belong to a clan.' })
+    const { data: clan, error } = await supabase.from('clans').select('*').eq('id', request.params.id).maybeSingle()
+    if (error) throw error
+    if (!clan) return response.status(404).json({ error: 'Clan not found.' })
+    if (clan.visibility !== 'public') return response.status(403).json({ error: 'That clan only accepts invited players.' })
+    const { error: joinError } = await supabase.from('clan_members').insert({ clan_id: clan.id, username: session.username, role: 'member' })
+    if (joinError?.code === '23505') return response.status(409).json({ error: 'You already belong to a clan.' })
+    if (joinError) throw joinError
+    await supabase.from('clan_invitations').delete().eq('invited_username', session.username)
+    return response.json(await clanSnapshot(session.username))
+  } catch (error) {
+    return clanServerError(response, error, 'Could not join the clan.')
+  }
+})
+
+app.post('/api/clans/invitations', async (request, response) => {
+  const session = chatSession(request)
+  if (!session) return response.status(401).json({ error: 'Log in to invite a player.' })
+  try {
+    const membership = await clanMembership(session.username)
+    if (!membership || membership.role !== 'owner') return response.status(403).json({ error: 'Only the clan creator can invite players.' })
+    const identifier = sanitizePlayerIdentifier(request.body?.username)
+    const { data: players, error } = await supabase.from('players').select('username, name')
+    if (error) throw error
+    const identifierUsername = identifier.toLowerCase()
+    const target = players?.find(player => player.username.toLowerCase() === identifierUsername)
+      ?? players?.find(player => canonicalDisplayName(player.name || '') === canonicalDisplayName(identifier))
+    if (!target) return response.status(404).json({ error: 'No player with that username was found.' })
+    if (target.username === session.username) return response.status(409).json({ error: 'You are already the clan creator.' })
+    if (await clanMembership(target.username)) return response.status(409).json({ error: `${target.name || target.username} already belongs to a clan.` })
+
+    const { error: inviteError } = await supabase.from('clan_invitations').insert({
+      id: randomUUID(),
+      clan_id: membership.clan_id,
+      invited_username: target.username,
+      invited_by_username: session.username,
+      created_at: new Date().toISOString(),
+    })
+    if (inviteError?.code === '23505') return response.status(409).json({ error: 'That player already has an invitation from your clan.' })
+    if (inviteError) throw inviteError
+    return response.status(201).json(await clanSnapshot(session.username))
+  } catch (error) {
+    if (error instanceof Error && /player username/.test(error.message)) return response.status(400).json({ error: error.message })
+    return clanServerError(response, error, 'Could not send the invitation.')
+  }
+})
+
+app.post('/api/clans/invitations/:id/accept', async (request, response) => {
+  const session = chatSession(request)
+  if (!session) return response.status(401).json({ error: 'Log in to accept an invitation.' })
+  try {
+    if (await clanMembership(session.username)) return response.status(409).json({ error: 'Leave your current clan before accepting an invitation.' })
+    const { data: invitation, error } = await supabase.from('clan_invitations').select('*').eq('id', request.params.id).eq('invited_username', session.username).maybeSingle()
+    if (error) throw error
+    if (!invitation) return response.status(404).json({ error: 'That invitation is no longer available.' })
+    const { error: joinError } = await supabase.from('clan_members').insert({ clan_id: invitation.clan_id, username: session.username, role: 'member' })
+    if (joinError?.code === '23505') return response.status(409).json({ error: 'You already belong to a clan.' })
+    if (joinError) throw joinError
+    await supabase.from('clan_invitations').delete().eq('invited_username', session.username)
+    return response.json(await clanSnapshot(session.username))
+  } catch (error) {
+    return clanServerError(response, error, 'Could not accept the invitation.')
+  }
+})
+
+app.delete('/api/clans/invitations/:id', async (request, response) => {
+  const session = chatSession(request)
+  if (!session) return response.status(401).json({ error: 'Log in to decline an invitation.' })
+  try {
+    const { data, error } = await supabase.from('clan_invitations').delete().eq('id', request.params.id).eq('invited_username', session.username).select('id').maybeSingle()
+    if (error) throw error
+    if (!data) return response.status(404).json({ error: 'That invitation is no longer available.' })
+    return response.json(await clanSnapshot(session.username))
+  } catch (error) {
+    return clanServerError(response, error, 'Could not decline the invitation.')
+  }
+})
+
+app.delete('/api/clans/current', async (request, response) => {
+  const session = chatSession(request)
+  if (!session) return response.status(401).json({ error: 'Log in to leave a clan.' })
+  try {
+    const membership = await clanMembership(session.username)
+    if (!membership) return response.status(404).json({ error: 'You do not belong to a clan.' })
+    if (membership.role === 'owner') return response.status(409).json({ error: 'Clan creators must disband their clan instead of leaving it.' })
+    const { error } = await supabase.from('clan_members').delete().eq('username', session.username)
+    if (error) throw error
+    return response.json(await clanSnapshot(session.username))
+  } catch (error) {
+    return clanServerError(response, error, 'Could not leave the clan.')
+  }
+})
+
+app.delete('/api/clans/current/disband', async (request, response) => {
+  const session = chatSession(request)
+  if (!session) return response.status(401).json({ error: 'Log in to disband a clan.' })
+  try {
+    const membership = await clanMembership(session.username)
+    if (!membership || membership.role !== 'owner') return response.status(403).json({ error: 'Only the clan creator can disband this clan.' })
+    const { error } = await supabase.from('clans').delete().eq('id', membership.clan_id).eq('owner_username', session.username)
+    if (error) throw error
+    return response.json(await clanSnapshot(session.username))
+  } catch (error) {
+    return clanServerError(response, error, 'Could not disband the clan.')
+  }
+})
+
+app.get('/api/clans/chat', async (request, response) => {
+  const session = chatSession(request)
+  if (!session) return response.status(401).json({ error: 'Log in to use clan chat.' })
+  try {
+    return response.json(await clanChatSnapshot(session.username))
+  } catch (error) {
+    return clanServerError(response, error, 'Could not load clan chat.')
+  }
+})
+
+app.post('/api/clans/chat', async (request, response) => {
+  const session = chatSession(request)
+  if (!session) return response.status(401).json({ error: 'Log in to use clan chat.' })
+  try {
+    const membership = await clanMembership(session.username)
+    if (!membership) return response.status(403).json({ error: 'Join a clan to use clan chat.' })
+    const message = sanitizeClanMessage(request.body?.message)
+    const { error } = await supabase.from('clan_messages').insert({
+      id: randomUUID(),
+      clan_id: membership.clan_id,
+      username: session.username,
+      message,
+      created_at: new Date().toISOString(),
+    })
+    if (error) throw error
+    return response.status(201).json(await clanChatSnapshot(session.username))
+  } catch (error) {
+    if (error instanceof Error && /Messages must|Enter a message/.test(error.message)) return response.status(400).json({ error: error.message })
+    return clanServerError(response, error, 'Could not send the clan message.')
+  }
+})
 
 app.get('/api/chat', (request, response) => {
   const session = chatSession(request)

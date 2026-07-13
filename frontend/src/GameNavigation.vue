@@ -8,7 +8,7 @@ const emit = defineEmits<{ 'update:modelValue': [page: Page] }>()
 const groups: Array<{ name: string; pages: Page[] }> = [
   { name: 'Adventure', pages: ['battle'] },
   { name: 'Professions', pages: ['crafting', 'woodcutting', 'mining', 'cooking', 'fishing', 'farming'] },
-  { name: 'Realm', pages: ['workers', 'metal detector', 'factions', 'auction', 'shop'] },
+  { name: 'Realm', pages: ['workers', 'metal detector', 'factions', 'clans', 'auction', 'shop'] },
   { name: 'Character', pages: ['inventory', 'achievements', 'high scores'] },
 ]
 
@@ -19,12 +19,12 @@ const visibleGroups = computed(() => groups.map(group => ({
 
 const labels: Record<Page, string> = {
   battle: 'Battle', woodcutting: 'Woodcutting', mining: 'Mining', fishing: 'Fishing', farming: 'Farming', crafting: 'Crafting', cooking: 'Cooking',
-  'metal detector': 'Metal Detector', workers: 'Workers', inventory: 'Inventory', achievements: 'Achievements', factions: 'Factions', auction: 'Auction', 'high scores': 'High Scores', shop: 'Shop',
+  'metal detector': 'Metal Detector', workers: 'Workers', inventory: 'Inventory', achievements: 'Achievements', factions: 'Factions', clans: 'Clans', auction: 'Auction', 'high scores': 'High Scores', shop: 'Shop',
 }
 
 const icons: Record<Page, string> = {
   battle: '⚔', woodcutting: '🪓', mining: '⛏', fishing: '🎣', farming: '🌾', crafting: '🔨', cooking: '🍲',
-  'metal detector': '⌁', workers: '♟', inventory: '🎒', achievements: '★', factions: '⚑', auction: '⚖', 'high scores': '♛', shop: '◈',
+  'metal detector': '⌁', workers: '♟', inventory: '🎒', achievements: '★', factions: '⚑', clans: '🛡', auction: '⚖', 'high scores': '♛', shop: '◈',
 }
 </script>
 

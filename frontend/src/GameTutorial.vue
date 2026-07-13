@@ -37,8 +37,8 @@ const steps = [
   },
   {
     icon: '★', eyebrow: 'READY · EMBERFALL', title: 'Choose your own path',
-    body: 'Progress through normal enemy tiers, build your professions, and approach bosses as long-term challenges. On mobile, swipe the area bar below the header to reach every page directly.',
-    tip: 'Use the ? Guide button in the top bar whenever you want to see this tutorial again.',
+    body: 'Progress through normal enemy tiers, build your professions, join or create a clan, and approach bosses as long-term challenges. On mobile, swipe the area bar below the header to reach every page directly.',
+    tip: 'Clan members can switch the chat panel from Realm to their private Clan channel. Use the ? Guide button whenever you want to see this tutorial again.',
   },
 ] as const
 

@@ -1,5 +1,5 @@
-export type Page = 'battle' | 'woodcutting' | 'mining' | 'fishing' | 'farming' | 'crafting' | 'cooking' | 'metal detector' | 'workers' | 'inventory' | 'achievements' | 'factions' | 'auction' | 'high scores' | 'shop'
-export const startingPages: Page[] = ['battle', 'woodcutting', 'mining', 'fishing', 'farming', 'crafting', 'cooking', 'workers', 'inventory', 'achievements', 'auction', 'high scores', 'shop']
+export type Page = 'battle' | 'woodcutting' | 'mining' | 'fishing' | 'farming' | 'crafting' | 'cooking' | 'metal detector' | 'workers' | 'inventory' | 'achievements' | 'factions' | 'clans' | 'auction' | 'high scores' | 'shop'
+export const startingPages: Page[] = ['battle', 'woodcutting', 'mining', 'fishing', 'farming', 'crafting', 'cooking', 'workers', 'inventory', 'achievements', 'clans', 'auction', 'high scores', 'shop']
 export const tierFiveUnlockPages: Page[] = []
 export type Skill = 'woodcutting' | 'mining' | 'fishing' | 'farming'
 export type GearSlot = 'weapon' | 'helmet' | 'chest' | 'legs' | 'boots' | 'gloves' | 'ring' | 'amulet' | 'pickaxe' | 'hatchet' | 'fishingRod' | 'farmingHoe'
@@ -48,6 +48,12 @@ export type Bonuses = Partial<{
   miningCrit: number
   fishingCrit: number
   farmingCrit: number
+  craftingSpeed: number
+  craftingConservation: number
+  craftingBonusOutput: number
+  cookingSpeed: number
+  cookingConservation: number
+  cookingBonusDish: number
   critPower: number
   recoverySpeed: number
   encounterSpeed: number
@@ -107,7 +113,7 @@ export type BossDefinition = {
 
 export const bossDefinitions: BossDefinition[] = [
   { id: 'buriedColossus', name: 'The Buried Colossus', title: 'Titan Below', icon: '🗿', tier: 10, unlockPage: 'metal detector', unlockName: 'Metal Detector', description: 'A Tier 10-scale titan whose shattered core can reveal signals hidden beneath the realm.', healthMultiplier: 1, attackMultiplier: 1, defenseBonus: 0, intervalMultiplier: 1, rewardMultiplier: 3 },
-  { id: 'bannerlessKing', name: 'The Bannerless King', title: 'Enemy of Every Banner', icon: '👑', tier: 20, unlockPage: 'factions', unlockName: 'Factions', description: 'A Tier 20-scale warlord. His defeat gives the realm’s three factions room to rally.', healthMultiplier: 1, attackMultiplier: 1, defenseBonus: 0, intervalMultiplier: 1, rewardMultiplier: 3.5 },
+  { id: 'bannerlessKing', name: 'The Bannerless King', title: 'Enemy of Every Banner', icon: '👑', tier: 20, unlockPage: 'factions', unlockName: 'Factions', description: 'A Tier 20-scale warlord. His defeat gives the realm’s factions room to rally.', healthMultiplier: 1, attackMultiplier: 1, defenseBonus: 0, intervalMultiplier: 1, rewardMultiplier: 3.5 },
   { id: 'bramblemaw', name: 'Bramblemaw', title: 'Gatekeeper of the Wilds', icon: '🌳', tier: 30, description: 'An ancient beast carrying the power of a Tier 30 normal enemy.', healthMultiplier: 1, attackMultiplier: 1, defenseBonus: 0, intervalMultiplier: 1, rewardMultiplier: 4 },
   { id: 'ironhideGolem', name: 'Ironhide Golem', title: 'Warden of the Quarry', icon: '🪨', tier: 40, description: 'A living wall of stone carrying the power of a Tier 40 normal enemy.', healthMultiplier: 1, attackMultiplier: 1, defenseBonus: 0, intervalMultiplier: 1, rewardMultiplier: 4.5 },
   { id: 'ashenForgemaster', name: 'Ashen Forgemaster', title: 'Keeper of the First Flame', icon: '🔥', tier: 50, description: 'The fallen smith commands power equal to a Tier 50 normal enemy.', healthMultiplier: 1, attackMultiplier: 1, defenseBonus: 0, intervalMultiplier: 1, rewardMultiplier: 5 },

@@ -8,7 +8,7 @@ type Achievement = { id: string; name: string; description: string; goal: number
 type StorePath = { id: string; name: string; icon: string; items: string[]; prices: number[] }
 type ShopUpgradeDetail = { id: ShopUpgradeId; name: string; description: string; icon: string; baseCost: number; max: number }
 type ServerProfessionStats = Omit<ProfessionStats, 'bonusYieldPercent'> & { bonusYieldPercent?: number; yield?: number }
-type FactionId = 'wardens' | 'delvers' | 'vanguard'
+export type FactionId = 'wardens' | 'delvers' | 'tidecallers' | 'harvesters' | 'artificers' | 'vanguard'
 export type FactionDefinition = { id: FactionId; name: string; icon: string; unlockLevel: number; description: string; ranks: readonly number[]; rewards: readonly string[] }
 type GameConfig = {
   woods: Resource[]
@@ -67,6 +67,13 @@ type LeaderboardEntry = {
   score: number
 }
 export type ChatMessage = { id: string; username: string; name: string; message: string; createdAt: string }
+export type ClanVisibility = 'public' | 'invite_only'
+export type ClanSummary = { id: string; name: string; description: string; visibility: ClanVisibility; ownerUsername: string; ownerName: string; memberCount: number; createdAt: string }
+export type ClanMember = { username: string; name: string; role: 'owner' | 'member'; joinedAt: string; online: boolean }
+export type ClanDetails = ClanSummary & { role: 'owner' | 'member'; online: number; members: ClanMember[] }
+export type ClanInvitation = { id: string; clanId: string; clanName: string; clanVisibility: ClanVisibility; invitedByUsername: string; invitedByName: string; createdAt: string }
+type ClanSnapshot = { clan: ClanDetails | null; invitations: ClanInvitation[]; publicClans: ClanSummary[] }
+type ClanChatSnapshot = { clan: { id: string; name: string } | null; messages: ChatMessage[]; online: number }
 export type AuctionListing = { id: string; seller_username: string; seller_name: string; item_name: string; quantity: number; price: number; created_at: string }
 export type DetectorReward = { kind: 'empty' | 'gold' | 'material' | 'rare' | 'gear'; label: string; detail: string; icon: string }
 export type MetalDetectorState = {
@@ -110,7 +117,7 @@ class ApiError extends Error {
 }
 
 export function useGame() {
-  const allTabs: Page[] = ['battle', 'woodcutting', 'mining', 'fishing', 'farming', 'crafting', 'cooking', 'metal detector', 'workers', 'inventory', 'achievements', 'factions', 'auction', 'high scores', 'shop']
+  const allTabs: Page[] = ['battle', 'woodcutting', 'mining', 'fishing', 'farming', 'crafting', 'cooking', 'metal detector', 'workers', 'inventory', 'achievements', 'factions', 'clans', 'auction', 'high scores', 'shop']
   const page = ref<Page>('battle')
   const authMode = ref<'login' | 'register'>('login')
   const authUsername = ref('')
@@ -141,6 +148,15 @@ export function useGame() {
   const chatMessages = ref<ChatMessage[]>([])
   const chatOnline = ref(0)
   const chatError = ref('')
+  const clan = ref<ClanDetails | null>(null)
+  const clanInvitations = ref<ClanInvitation[]>([])
+  const publicClans = ref<ClanSummary[]>([])
+  const clanMessages = ref<ChatMessage[]>([])
+  const clanOnline = ref(0)
+  const clanError = ref('')
+  const clanChatError = ref('')
+  const clanNotice = ref('')
+  const clanActionRunning = ref(false)
   const auctionListings = ref<AuctionListing[]>([])
   const auctionError = ref('')
   const offlineProgress = ref<OfflineProgress | null>(null)
@@ -150,6 +166,7 @@ export function useGame() {
   let pollTimer: ReturnType<typeof setTimeout> | undefined
   let healthTimer: ReturnType<typeof setInterval> | undefined
   let chatTimer: ReturnType<typeof setInterval> | undefined
+  let clanTimer: ReturnType<typeof setInterval> | undefined
   let requestRunning = false
   let craftRequestRunning = false
   let cookingRequestRunning = false
@@ -235,7 +252,14 @@ export function useGame() {
   const achievements = computed(() => state.value?.achievements || [])
   const factionDefinitions = computed(() => config.value?.factionDefinitions || [])
   const alliedFaction = computed(() => state.value?.alliedFaction || null)
-  const factions = computed(() => state.value?.factions || { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } })
+  const factions = computed(() => state.value?.factions || {
+    wardens: { reputation: 0, rank: 0 },
+    delvers: { reputation: 0, rank: 0 },
+    tidecallers: { reputation: 0, rank: 0 },
+    harvesters: { reputation: 0, rank: 0 },
+    artificers: { reputation: 0, rank: 0 },
+    vanguard: { reputation: 0, rank: 0 },
+  })
   const dailyObjectives = computed(() => state.value?.dailyObjectives || [])
   const dailyResetAt = computed(() => state.value?.dailyResetAt || Date.now())
   const craftingProfession = computed(() => state.value?.craftingProfession || { level: 1, xp: 0, xpNeeded: 77 })
@@ -404,15 +428,26 @@ export function useGame() {
     localStorage.removeItem(SESSION_STORAGE_KEY)
     authToken.value = ''
     gameId.value = ''
+    clan.value = null
+    clanInvitations.value = []
+    publicClans.value = []
+    clanMessages.value = []
+    clearInterval(clanTimer)
   }
 
   function startAuthenticatedServices() {
     saveSession()
     startPolling()
     void loadChat()
+    void loadClans()
     void loadAuction()
     clearInterval(chatTimer)
-    chatTimer = setInterval(loadChat, 2000)
+    chatTimer = setInterval(() => {
+      void loadChat()
+      if (clan.value) void loadClanChat()
+    }, 2000)
+    clearInterval(clanTimer)
+    clanTimer = setInterval(loadClans, 10_000)
   }
 
   async function restoreSession() {
@@ -501,7 +536,7 @@ export function useGame() {
     }
   }
 
-  async function sendChat(message: string) {
+  async function sendRealmChat(message: string) {
     if (!authToken.value) return false
     try {
       const result = await readJson<{ messages: ChatMessage[]; online: number }>(
@@ -520,6 +555,101 @@ export function useGame() {
       return false
     }
   }
+
+  function applyClanSnapshot(snapshot: ClanSnapshot) {
+    clan.value = snapshot.clan
+    clanInvitations.value = snapshot.invitations
+    publicClans.value = snapshot.publicClans
+    if (!snapshot.clan) {
+      clanMessages.value = []
+      clanOnline.value = 0
+      clanChatError.value = ''
+    }
+  }
+
+  async function loadClans() {
+    if (!authToken.value) return
+    try {
+      const result = await readJson<ClanSnapshot>(
+        await fetch(apiUrl('/api/clans'), { headers: { Authorization: `Bearer ${authToken.value}` } }),
+      )
+      applyClanSnapshot(result)
+      clanError.value = ''
+      if (result.clan) void loadClanChat()
+    } catch (error) {
+      clanError.value = error instanceof Error ? error.message : 'Clans are unavailable.'
+    }
+  }
+
+  async function loadClanChat() {
+    if (!authToken.value || !clan.value) return
+    try {
+      const result = await readJson<ClanChatSnapshot>(
+        await fetch(apiUrl('/api/clans/chat'), { headers: { Authorization: `Bearer ${authToken.value}` } }),
+      )
+      clanMessages.value = result.messages
+      clanOnline.value = result.online
+      clanChatError.value = ''
+      if (!result.clan) void loadClans()
+    } catch (error) {
+      clanChatError.value = error instanceof Error ? error.message : 'Clan chat is unavailable.'
+    }
+  }
+
+  async function sendClanChat(message: string) {
+    if (!authToken.value || !clan.value) return false
+    try {
+      const result = await readJson<ClanChatSnapshot>(
+        await fetch(apiUrl('/api/clans/chat'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken.value}` },
+          body: JSON.stringify({ message }),
+        }),
+      )
+      clanMessages.value = result.messages
+      clanOnline.value = result.online
+      clanChatError.value = ''
+      return true
+    } catch (error) {
+      clanChatError.value = error instanceof Error ? error.message : 'Could not send clan message.'
+      return false
+    }
+  }
+
+  function sendChat(channel: 'realm' | 'clan', message: string) {
+    return channel === 'clan' ? sendClanChat(message) : sendRealmChat(message)
+  }
+
+  async function clanRequest(path: string, method: string, successMessage: string, body?: unknown) {
+    if (!authToken.value || clanActionRunning.value) return false
+    clanActionRunning.value = true
+    clanError.value = ''
+    clanNotice.value = ''
+    try {
+      const result = await readJson<ClanSnapshot>(await fetch(apiUrl(path), {
+        method,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken.value}` },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      }))
+      applyClanSnapshot(result)
+      clanNotice.value = successMessage
+      if (result.clan) await loadClanChat()
+      return true
+    } catch (error) {
+      clanError.value = error instanceof Error ? error.message : 'The clan action failed.'
+      return false
+    } finally {
+      clanActionRunning.value = false
+    }
+  }
+
+  const createClan = (name: string, description: string, visibility: ClanVisibility) => clanRequest('/api/clans', 'POST', `${name.trim()} was created.`, { name, description, visibility })
+  const joinClan = (id: string) => clanRequest(`/api/clans/${id}/join`, 'POST', 'You joined the clan.')
+  const inviteClanMember = (username: string) => clanRequest('/api/clans/invitations', 'POST', `Invitation sent to ${username.trim()}.`, { username })
+  const acceptClanInvitation = (id: string) => clanRequest(`/api/clans/invitations/${id}/accept`, 'POST', 'Invitation accepted.')
+  const declineClanInvitation = (id: string) => clanRequest(`/api/clans/invitations/${id}`, 'DELETE', 'Invitation declined.')
+  const leaveClan = () => clanRequest('/api/clans/current', 'DELETE', 'You left the clan.')
+  const disbandClan = () => clanRequest('/api/clans/current/disband', 'DELETE', 'The clan was disbanded.')
 
   async function loadAuction() {
     if (!authToken.value) return
@@ -772,7 +902,7 @@ export function useGame() {
     healthTimer = setInterval(() => { if (!serverOnline.value) void connectBackend() }, 2000)
   })
   onBeforeUnmount(() => {
-    clearTimeout(pollTimer); clearInterval(healthTimer); clearInterval(chatTimer)
+    clearTimeout(pollTimer); clearInterval(healthTimer); clearInterval(chatTimer); clearInterval(clanTimer)
     document.removeEventListener('visibilitychange', handleVisibilityChange)
     toastTimers.forEach(timer => clearTimeout(timer)); toastTimers.clear()
   })
@@ -785,10 +915,10 @@ export function useGame() {
     workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId, craftingProfession, craftingStats, cookingId, cookingProfession, cookingStats, factionDefinitions, alliedFaction, factions, dailyObjectives, dailyResetAt, metalDetector,
     craftingRecipes, cookingRecipeList, battleFoods, foodHealingValues, foodHotValues, recipeLevels, storeListings, materialGroups, toasts,
     leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
-    chatMessages, chatOnline, chatError,
+    chatMessages, chatOnline, chatError, clan, clanInvitations, publicClans, clanMessages, clanOnline, clanError, clanChatError, clanNotice, clanActionRunning,
     auctionListings, auctionError, offlineProgress,
     professionStats, professionXpNeeded, isUnlocked, effectiveDuration, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip,
-    submitAuth, switchAuthMode, loginWithGoogle, submitDisplayName, startBattle, setEncounterMode, changeEnemyTier, gather, craft, cook, eatFood, selectFood, toggleAutoEat, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
+    submitAuth, switchAuthMode, loginWithGoogle, submitDisplayName, startBattle, setEncounterMode, changeEnemyTier, gather, craft, cook, eatFood, selectFood, toggleAutoEat, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadClans, createClan, joinClan, inviteClanMember, acceptClanInvitation, declineClanInvitation, leaveClan, disbandClan, loadAuction, createAuction, buyAuction, cancelAuction,
     displayNameRequired, displayNameDraft, displayNameError, displayNameLoading,
   }
 }
