@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { startingPages } from './gameData'
 import type { BossDefinition, CookingRecipe, Gear, GearSlot, Page, ProfessionStats, RareMaterial, Recipe, Resource, Skill } from './gameData'
 
@@ -98,6 +98,17 @@ function apiUrl(path: string): string {
   return `${API_URL}${path}`
 }
 
+class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+  ) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
 export function useGame() {
   const allTabs: Page[] = ['battle', 'woodcutting', 'mining', 'fishing', 'farming', 'crafting', 'cooking', 'metal detector', 'workers', 'inventory', 'achievements', 'factions', 'auction', 'high scores', 'shop']
   const page = ref<Page>('battle')
@@ -106,6 +117,7 @@ export function useGame() {
   const authPassword = ref('')
   const authConfirmPassword = ref('')
   const authError = ref('')
+  const authUsernameError = ref('')
   const authLoading = ref(false)
   const authToken = ref('')
   const sessionRestoring = ref(true)
@@ -433,8 +445,14 @@ export function useGame() {
   }
 
   async function readJson<T>(response: Response): Promise<T> {
-    const payload = await response.json() as T & { error?: string }
-    if (!response.ok) throw new Error(payload.error || 'The server rejected the request.')
+    const payload = await response.json() as T & { error?: string; code?: string }
+    if (!response.ok) {
+      throw new ApiError(
+        payload.error || 'The server rejected the request.',
+        response.status,
+        payload.code,
+      )
+    }
     return payload
   }
 
@@ -555,8 +573,14 @@ export function useGame() {
   function switchAuthMode(mode: 'login' | 'register') {
     authMode.value = mode
     authError.value = ''
+    authUsernameError.value = ''
     authConfirmPassword.value = ''
   }
+
+  watch(authUsername, () => {
+    authUsernameError.value = ''
+  })
+
   async function submitAuth() {
     const username = authUsername.value.trim().slice(0, 18)
     if (!serverOnline.value || !username || authPassword.value.length < 8) return
@@ -566,6 +590,7 @@ export function useGame() {
     }
     authLoading.value = true
     authError.value = ''
+    authUsernameError.value = ''
     try {
       if (!config.value) await loadConfig()
       seenEventIds.clear()
@@ -585,7 +610,15 @@ export function useGame() {
       authConfirmPassword.value = ''
       startAuthenticatedServices()
     } catch (error) {
-      authError.value = error instanceof Error ? error.message : 'Authentication failed.'
+      if (
+        authMode.value === 'register' &&
+        error instanceof ApiError &&
+        (error.code === 'USERNAME_TAKEN' || error.status === 409)
+      ) {
+        authUsernameError.value = error.message
+      } else {
+        authError.value = error instanceof Error ? error.message : 'Authentication failed.'
+      }
     } finally { authLoading.value = false }
   }
 
@@ -741,7 +774,7 @@ export function useGame() {
   })
 
   return {
-    tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authLoading, sessionRestoring, serverOnline, backendError, playerName, playerTitle, gold, level, xp, xpNeeded, message, player, combatStats, dps,
+    tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authUsernameError, authLoading, sessionRestoring, serverOnline, backendError, playerName, playerTitle, gold, level, xp, xpNeeded, message, player, combatStats, dps,
     enemyTier, highestEnemyTier, encounterMode, defeatedBosses, tierFiveAreasUnlocked, bossDefinitions, currentBoss, enemy, battleStarted, autoBattle, selectedFood, autoEat, autoEatThreshold, autoEatCooldownRemaining, foodHealingPowerBonus, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
     heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
     woods, rocks, fishingSpots, farmingPlots, allResources, rareMaterials, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, googleClientId, professions, jobs, inventory, sellPrices, resourceMastery,

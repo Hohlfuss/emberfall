@@ -1992,13 +1992,15 @@ app.post('/api/auth/register', async (request, response) => {
 
     if (existingPlayer) {
       return response.status(409).json({
-        error: 'That username is already taken.',
+        code: 'USERNAME_TAKEN',
+        error: 'That username is already taken. Choose another username.',
       })
     }
 
     if (await displayNameIsTaken(name)) {
       return response.status(409).json({
-        error: 'That username is already used as another player\'s display name.',
+        code: 'USERNAME_TAKEN',
+        error: 'That username is already taken. Choose another username.',
       })
     }
 
@@ -2021,7 +2023,8 @@ app.post('/api/auth/register', async (request, response) => {
 
       if (insertError.code === '23505') {
         return response.status(409).json({
-          error: 'That username or display name is already taken.',
+          code: 'USERNAME_TAKEN',
+          error: 'That username is already taken. Choose another username.',
         })
       }
 
