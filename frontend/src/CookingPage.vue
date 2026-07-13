@@ -101,7 +101,7 @@ function cookingLabel(recipe: DisplayRecipe) {
       >
         <header>
           <div class="dish-icon">{{ recipe.icon }}</div>
-          <div><span>TIER {{ recipe.tier }} · LEVEL {{ recipe.tier }}</span><h3>{{ recipe.name }}</h3></div>
+          <div><span>TIER {{ recipe.tier }} · REQUIRES COOKING LEVEL {{ recipe.tier }}</span><h3>{{ recipe.name }}</h3></div>
           <strong class="healing">+{{ effectiveHealing(recipe) }} HP</strong>
         </header>
         <p>{{ recipe.description }}</p>

@@ -1,5 +1,5 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import type { CookingRecipe, Gear, GearSlot, Page, ProfessionStats, RareMaterial, Recipe, Resource, Skill } from './gameData'
+import type { BossDefinition, CookingRecipe, Gear, GearSlot, Page, ProfessionStats, RareMaterial, Recipe, Resource, Skill } from './gameData'
 
 type ShopUpgradeId = 'medic' | 'scouting' | 'training' | 'fortitude' | 'autoBattle' | 'autoEat' | 'healingPower'
 type GameEvent = { id: number; kind: 'achievement' | 'critical' | 'level' | 'rare' | 'yield' | 'worker'; title: string; detail: string }
@@ -23,12 +23,14 @@ type GameConfig = {
   storePaths: StorePath[]
   shopUpgradeDetails: ShopUpgradeDetail[]
   factionDefinitions: FactionDefinition[]
+  bossDefinitions: BossDefinition[]
   googleClientId: string
 }
 type ServerState = {
   id: string; revision: number; serverNow: number; playerName: string; playerTitle: string; gold: number; level: number; xp: number; xpNeeded: number; message: string
   player: { health: number }
   combatStats: { maxHealth: number; attack: number; defense: number; attackSpeed: number; recoveryTime: number; enemyLoadTime: number; passiveRegen: number }
+  encounterMode: 'normal' | 'boss'; defeatedBosses: string[]; currentBossId: string; unlockedPages: Page[]
   enemyTier: number; highestEnemyTier: number
   enemy: { name: string; archetype: string; health: number; maxHealth: number; attack: number; defense: number; attackSpeed: number; xp: number; gold: number }
   battleStarted: boolean; autoBattle: boolean; recovering: boolean; enemyLoading: boolean; recoveryRemaining: number; enemyLoadRemaining: number
@@ -115,7 +117,8 @@ export function useGame() {
   const actionError = ref('')
   const gameId = ref('')
   const state = ref<ServerState | null>(null)
-  const tabs = computed(() => allTabs.filter(tab => tab !== 'metal detector' || state.value?.metalDetector.unlocked))
+  const coreTabs: Page[] = ['battle', 'inventory', 'achievements', 'high scores', 'shop']
+  const tabs = computed(() => allTabs.filter(tab => (state.value?.unlockedPages || coreTabs).includes(tab)))
   const config = ref<GameConfig | null>(null)
   const toasts = ref<Toast[]>([])
   const leaderboardCategory = ref<LeaderboardCategory>('woodcutting')
@@ -160,6 +163,10 @@ export function useGame() {
   const dps = computed(() => (combatStats.value.attack / (combatStats.value.attackSpeed / 1000)).toFixed(1))
   const enemyTier = computed(() => state.value?.enemyTier || 1)
   const highestEnemyTier = computed(() => state.value?.highestEnemyTier || 1)
+  const encounterMode = computed(() => state.value?.encounterMode || 'normal')
+  const defeatedBosses = computed(() => state.value?.defeatedBosses || [])
+  const bossDefinitions = computed(() => config.value?.bossDefinitions || [])
+  const currentBoss = computed(() => bossDefinitions.value.find(boss => boss.id === state.value?.currentBossId) || bossDefinitions.value[0])
   const enemy = computed(() => state.value?.enemy || emptyEnemy)
   const battleStarted = computed(() => Boolean(state.value?.battleStarted))
   const autoBattle = computed(() => Boolean(state.value?.autoBattle))
@@ -181,7 +188,7 @@ export function useGame() {
   const battleButtonLabel = computed(() => recovering.value
     ? 'RECOVERING ' + (recoveryRemaining.value / 1000).toFixed(1) + 'S'
     : enemyLoading.value
-      ? 'LOADING ENEMY ' + (enemyLoadRemaining.value / 1000).toFixed(1) + 'S'
+      ? (encounterMode.value === 'boss' ? 'SUMMONING BOSS ' : 'LOADING ENEMY ') + (enemyLoadRemaining.value / 1000).toFixed(1) + 'S'
       : battleStarted.value ? 'RETREAT' : 'START BATTLE')
 
   const woods = computed(() => config.value?.woods || [])
@@ -327,6 +334,7 @@ export function useGame() {
     const rareChance = Math.min(10, .5 + resource.tier * .75)
     return [
       resource.name,
+      `Tier ${resource.tier} activity`,
       `Requires ${resource.skill} level ${resource.tier}`,
       `Produces ${resource.item}`,
       `Effective time: ${effectiveDuration(resource).toFixed(1)}s`,
@@ -684,6 +692,7 @@ export function useGame() {
   }
 
   function startBattle() { void sendAction({ type: battleStarted.value ? 'retreat' : 'startBattle' }) }
+  function setEncounterMode(mode: 'normal' | 'boss') { void sendAction({ type: 'setEncounterMode', mode }) }
   function changeEnemyTier(change: number) {
     const tier = Math.max(1, Math.min(highestEnemyTier.value, enemyTier.value + change))
     if (tier !== enemyTier.value) void sendAction({ type: 'setEnemyTier', tier })
@@ -732,7 +741,7 @@ export function useGame() {
 
   return {
     tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authLoading, sessionRestoring, serverOnline, backendError, playerName, playerTitle, gold, level, xp, xpNeeded, message, player, combatStats, dps,
-    enemyTier, highestEnemyTier, enemy, battleStarted, autoBattle, selectedFood, autoEat, autoEatThreshold, autoEatCooldownRemaining, foodHealingPowerBonus, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
+    enemyTier, highestEnemyTier, encounterMode, defeatedBosses, bossDefinitions, currentBoss, enemy, battleStarted, autoBattle, selectedFood, autoEat, autoEatThreshold, autoEatCooldownRemaining, foodHealingPowerBonus, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
     heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
     woods, rocks, fishingSpots, farmingPlots, allResources, rareMaterials, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, googleClientId, professions, jobs, inventory, sellPrices, resourceMastery,
     workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId, craftingProfession, craftingStats, cookingId, cookingProfession, cookingStats, factionDefinitions, alliedFaction, factions, dailyObjectives, dailyResetAt, metalDetector,
@@ -741,7 +750,7 @@ export function useGame() {
     chatMessages, chatOnline, chatError,
     auctionListings, auctionError, offlineProgress,
     professionStats, professionXpNeeded, isUnlocked, effectiveDuration, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip,
-    submitAuth, switchAuthMode, loginWithGoogle, submitDisplayName, startBattle, changeEnemyTier, gather, craft, cook, eatFood, selectFood, toggleAutoEat, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
+    submitAuth, switchAuthMode, loginWithGoogle, submitDisplayName, startBattle, setEncounterMode, changeEnemyTier, gather, craft, cook, eatFood, selectFood, toggleAutoEat, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
     displayNameRequired, displayNameDraft, displayNameError, displayNameLoading,
   }
 }

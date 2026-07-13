@@ -6,7 +6,8 @@ const props = defineProps<{ messages: ChatMessage[]; online: number; error: stri
 const emit = defineEmits<{ send: [message: string] }>()
 const draft = ref('')
 const list = ref<HTMLElement>()
-const minimized = ref(localStorage.getItem('emberfall-chat-minimized') === 'true')
+const savedMinimized = localStorage.getItem('emberfall-chat-minimized')
+const minimized = ref(savedMinimized === null ? window.matchMedia('(max-width: 720px)').matches : savedMinimized === 'true')
 
 function toggleMinimized() {
   minimized.value = !minimized.value

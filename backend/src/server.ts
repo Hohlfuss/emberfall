@@ -7,8 +7,8 @@ import { OAuth2Client } from 'google-auth-library'
 
 loadEnv({ path: fileURLToPath(new URL('../.env', import.meta.url)) })
 import {
-  allResources, cookingRecipes, farmingPlots, fishingSpots, GAME_PACE_MULTIPLIER, gearCatalog, rareMaterials, recipes as recipeData, rocks, slotLabels, woods,
-  type Bonuses, type GearSlot, type ProfessionStats, type Recipe, type Resource, type Skill,
+  allResources, bossDefinitions, cookingRecipes, farmingPlots, fishingSpots, GAME_PACE_MULTIPLIER, gearCatalog, rareMaterials, recipes as recipeData, rocks, slotLabels, woods,
+  type Bonuses, type BossDefinition, type GearSlot, type Page, type ProfessionStats, type Recipe, type Resource, type Skill,
 } from '../../frontend/src/gameData.ts'
 import { rollGatherYield } from './gathering.ts'
 import { rollRareGatherMaterial } from './materials.ts'
@@ -91,6 +91,7 @@ app.use((request, response, next) => {
 
 type Profession = { level: number; xp: number }
 type Enemy = { name: string; archetype: string; health: number; maxHealth: number; attack: number; defense: number; attackSpeed: number; xp: number; gold: number }
+type EncounterMode = 'normal' | 'boss'
 type ShopUpgrade = 'medic' | 'scouting' | 'training' | 'fortitude' | 'autoBattle' | 'autoEat' | 'healingPower'
 type EventKind = 'achievement' | 'critical' | 'level' | 'rare' | 'yield' | 'worker'
 type GameEvent = { id: number; kind: EventKind; title: string; detail: string }
@@ -142,6 +143,8 @@ type Game = {
   titleAchievementId: string | null
   enemyTier: number
   highestEnemyTier: number
+  encounterMode: EncounterMode
+  defeatedBosses: string[]
   enemy: Enemy
   battleActive: boolean
   autoBattle: boolean
@@ -186,6 +189,7 @@ type Action =
   | { type: 'startBattle' }
   | { type: 'retreat' }
   | { type: 'setEnemyTier'; tier: number }
+  | { type: 'setEncounterMode'; mode: EncounterMode }
   | { type: 'gather'; resourceId: string }
   | { type: 'craft'; recipeId: string }
   | { type: 'cook'; recipeId: string }
@@ -323,6 +327,7 @@ const enemyArchetypes = [
   { name: 'Guarded', health: 1.05, attack: .95, defense: 2, interval: 1.08, reward: 1.15 },
 ]
 const enemyNames = ['Moss Rat', 'Cave Slime', 'Feral Imp', 'Dust Goblin', 'Wild Wolf', 'Stone Drake', 'Void Wraith']
+const corePages: Page[] = ['battle', 'inventory', 'achievements', 'high scores', 'shop']
 const games = new Map<string, Game>()
 
 const tokens = new Map<
@@ -403,6 +408,39 @@ function normalizeLegacyTerminology(text: string) {
     .replaceAll('+1 mining yield', '+20% mining bonus yield')
 }
 
+function normalizedBossProgress(value: unknown): string[] {
+  // Saves created before boss progression had every area available, so preserve that access.
+  if (!Array.isArray(value)) return bossDefinitions.map(boss => boss.id)
+  const stored = new Set(value.filter((id): id is string => typeof id === 'string'))
+  const sequential: string[] = []
+  for (const boss of bossDefinitions) {
+    if (!stored.has(boss.id)) break
+    sequential.push(boss.id)
+  }
+  return sequential
+}
+
+function currentBoss(game: Game): BossDefinition {
+  return bossDefinitions.find(boss => !game.defeatedBosses.includes(boss.id)) ?? bossDefinitions[bossDefinitions.length - 1]!
+}
+
+function unlockedPages(game: Game): Page[] {
+  return [...new Set([
+    ...corePages,
+    ...bossDefinitions.filter(boss => game.defeatedBosses.includes(boss.id)).map(boss => boss.unlockPage),
+  ])]
+}
+
+function areaUnlocked(game: Game, page: Page) {
+  return unlockedPages(game).includes(page)
+}
+
+function requireArea(game: Game, page: Page) {
+  if (areaUnlocked(game, page)) return
+  const boss = bossDefinitions.find(candidate => candidate.unlockPage === page)
+  reject(boss ? `Defeat ${boss.name} to unlock ${boss.unlockName}.` : 'That area is still locked.')
+}
+
 function deserializeGame(value: unknown): Game {
   const stored = value as StoredGame
   const storedAt = stored.lastAdvancedAt ?? Date.now()
@@ -413,6 +451,7 @@ function deserializeGame(value: unknown): Game {
   const validStoredTitle = achievementDefinitions.some(achievement =>
     achievement.id === stored.titleAchievementId && achievement.titleReward && storedAchievementIds.includes(achievement.id),
   )
+  const defeatedBosses = normalizedBossProgress(stored.defeatedBosses)
 
   return {
     ...stored,
@@ -436,6 +475,8 @@ function deserializeGame(value: unknown): Game {
     autoEat: Boolean(stored.autoEat && (stored.shopUpgrades?.autoEat ?? 0) > 0),
     nextAutoEatAt: Number.isFinite(stored.nextAutoEatAt) ? stored.nextAutoEatAt : 0,
     autoBattle: stored.autoBattle ?? false,
+    encounterMode: stored.encounterMode === 'boss' ? 'boss' : 'normal',
+    defeatedBosses,
     ownedGear: [...new Set([...(stored.ownedGear ?? []), 'wornFishingRod', 'wornFarmingHoe'])],
     unlockedGear: [...new Set([...(stored.unlockedGear ?? stored.ownedGear ?? []), 'wornFishingRod', 'wornFarmingHoe'])],
     equipment: {
@@ -452,7 +493,7 @@ function deserializeGame(value: unknown): Game {
     alliedFaction: stored.alliedFaction ?? null,
     factions: stored.factions ?? { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } },
     daily: stored.daily ?? createDailyState(stored.lifetime ?? createLifetimeStats()),
-    metalDetector: normalizeMetalDetector(stored.metalDetector, storedAt, (stored.highestEnemyTier ?? 1) >= 4),
+    metalDetector: normalizeMetalDetector(stored.metalDetector, storedAt, defeatedBosses.includes('buriedColossus')),
     titleAchievementId: validStoredTitle ? stored.titleAchievementId : null,
     workers: Math.max(stored.workers ?? 0, recordedLevelRewards) + missingLevelRewards,
     levelRewardWorkers: expectedLevelRewards,
@@ -783,6 +824,20 @@ function checkAchievements(game: Game) {
 }
 
 function rollEnemy(game: Game) {
+  if (game.encounterMode === 'boss') {
+    const boss = currentBoss(game)
+    const power = boss.tier - 1
+    game.enemy.name = boss.name
+    game.enemy.archetype = boss.title
+    game.enemy.maxHealth = Math.round(90 * 1.32 ** power * boss.healthMultiplier)
+    game.enemy.health = game.enemy.maxHealth
+    game.enemy.attack = Math.max(1, Math.round(16 * 1.18 ** power * boss.attackMultiplier))
+    game.enemy.defense = Math.floor(power * 1.6 + power ** 1.25 * .35) + boss.defenseBonus
+    game.enemy.attackSpeed = Math.max(800, Math.round(2250 * GAME_PACE_MULTIPLIER * boss.intervalMultiplier / (1 + power * .025)))
+    game.enemy.xp = Math.round(24 * 1.13 ** power * boss.rewardMultiplier)
+    game.enemy.gold = Math.round(8 * 1.12 ** power * boss.rewardMultiplier)
+    return
+  }
   const power = game.enemyTier - 1
   const variance = () => .9 + Math.random() * .2
   const archetype = enemyArchetypes[Math.floor(Math.random() * enemyArchetypes.length)] ?? enemyArchetypes[0]!
@@ -954,6 +1009,32 @@ function completeCooking(game: Game) {
 function finishVictory(game: Game, now: number) {
   const rewardXp = game.enemy.xp
   const rewardGold = game.enemy.gold
+  if (game.encounterMode === 'boss') {
+    const boss = currentBoss(game)
+    const firstVictory = !game.defeatedBosses.includes(boss.id)
+    giveGold(game, rewardGold)
+    game.lifetime.kills++
+    if (firstVictory) {
+      game.defeatedBosses.push(boss.id)
+      if (boss.unlockPage === 'metal detector') {
+        game.metalDetector.unlocked = true
+        game.metalDetector.charges = DETECTOR_MAX_CHARGES
+        game.metalDetector.chargeUpdatedAt = now
+      }
+      pushEvent(game, 'achievement', `${boss.name} defeated!`, `${boss.unlockName} unlocked · +${rewardXp} XP · +${rewardGold} gold`)
+      chatMessages.push({ id: randomUUID(), username: 'realm', name: 'Realm Herald', message: `${game.name} defeated ${boss.name} and unlocked ${boss.unlockName}!`, createdAt: new Date().toISOString() })
+      if (chatMessages.length > CHAT_LIMIT) chatMessages.splice(0, chatMessages.length - CHAT_LIMIT)
+    }
+    stopBattle(game)
+    gainXp(game, rewardXp)
+    checkAchievements(game)
+    const remaining = bossDefinitions.length - game.defeatedBosses.length
+    const status = firstVictory
+      ? `${boss.name} defeated! ${boss.unlockName} unlocked.${remaining ? ' Preparing the next area boss...' : ' Every area is now open!'}`
+      : `${boss.name} defeated again! +${rewardXp} XP and +${rewardGold} gold. Preparing a rematch...`
+    startEnemyLoad(game, now, status)
+    return
+  }
   giveGold(game, rewardGold)
   game.lifetime.kills++
   gainFactionReputation(game, 'vanguard', Math.max(1, game.enemyTier * 2))
@@ -968,13 +1049,6 @@ function finishVictory(game: Game, now: number) {
       chatMessages.push({ id: randomUUID(), username: 'realm', name: 'Realm Herald', message: `${game.name} found the mythic ${gear.name} from a tier ${game.enemyTier} ${game.enemy.name}!`, createdAt: new Date().toISOString() })
       if (chatMessages.length > CHAT_LIMIT) chatMessages.splice(0, chatMessages.length - CHAT_LIMIT)
     }
-  }
-  if (game.enemyTier === 3 && !game.metalDetector.unlocked) {
-    game.metalDetector.unlocked = true
-    game.metalDetector.charges = DETECTOR_MAX_CHARGES
-    game.metalDetector.chargeUpdatedAt = now
-    game.message = 'The defeated enemy dropped a battered metal detector!'
-    pushEvent(game, 'achievement', 'Metal detector found!', 'A new activity has appeared · starts with 10 charges')
   }
   if (game.enemyTier === game.highestEnemyTier && game.highestEnemyTier < 25) game.highestEnemyTier++
   stopBattle(game)
@@ -1025,10 +1099,11 @@ function advanceGame(game: Game, now = Date.now()) {
   if (game.enemyLoad && now >= game.enemyLoad.endsAt) {
     game.enemyLoad = null
     rollEnemy(game)
-    game.message = game.recovery ? `${game.enemy.name} is ready. ${game.name} is still recovering.` : `Tier ${game.enemyTier} ${game.enemy.name} is ready to fight.`
+    const encounterLabel = game.encounterMode === 'boss' ? `Area boss ${game.enemy.name}` : `Tier ${game.enemyTier} ${game.enemy.name}`
+    game.message = game.recovery ? `${encounterLabel} is ready. ${game.name} is still recovering.` : `${encounterLabel} is ready to fight.`
   }
 
-  if (game.autoBattle && !game.battleActive && !game.recovery && !game.enemyLoad) {
+  if (game.autoBattle && game.encounterMode === 'normal' && !game.battleActive && !game.recovery && !game.enemyLoad) {
     const stats = combatStats(game)
     game.player.health = Math.min(Math.max(1, game.player.health), stats.maxHealth)
     game.battleActive = true
@@ -1137,7 +1212,7 @@ function createGame(name: string): Game {
     workerAssignments: {}, workerProgress: {}, workers: 0, levelRewardWorkers: 0, shopUpgrades: { medic: 0, scouting: 0, training: 0, fortitude: 0, autoBattle: 0, autoEat: 0, healingPower: 0 }, selectedFood: null, autoEat: false, nextAutoEatAt: 0,
     unlockedAchievements: new Set(), titleAchievementId: null, alliedFaction: null, factions: { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } }, daily: createDailyState(createLifetimeStats()), metalDetector: createMetalDetector(now),
     lifetime: createLifetimeStats(),
-    enemyTier: 1, highestEnemyTier: 1, enemy: { name: 'Loading...', archetype: '', health: 0, maxHealth: 1, attack: 0, defense: 0, attackSpeed: 0, xp: 0, gold: 0 },
+    enemyTier: 1, highestEnemyTier: 1, encounterMode: 'normal', defeatedBosses: [], enemy: { name: 'Loading...', archetype: '', health: 0, maxHealth: 1, attack: 0, defense: 0, attackSpeed: 0, xp: 0, gold: 0 },
     battleActive: false, autoBattle: false, nextPlayerAttackAt: 0, nextEnemyAttackAt: 0, recovery: null, enemyLoad: null, crafting: null, cooking: null,
     events: [], nextEventId: 1,
     progressSnapshot: { at: now, gold: 0, xp: 0, level: 1, kills: 0, gathered: 0, crafted: 0, cooked: 0, inventory: {}, ownedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe', 'wornFishingRod', 'wornFarmingHoe'] },
@@ -1161,7 +1236,7 @@ function performAction(game: Game, action: Action, now: number) {
       game.battleActive = true
       game.nextPlayerAttackAt = now + stats.attackSpeed
       game.nextEnemyAttackAt = now + game.enemy.attackSpeed
-      game.message = `Battle started against tier ${game.enemyTier} ${game.enemy.name}.`
+      game.message = `Battle started against ${game.encounterMode === 'boss' ? `area boss ${game.enemy.name}` : `tier ${game.enemyTier} ${game.enemy.name}`}.`
       game.lifetime.battlesStarted++
       break
     }
@@ -1177,9 +1252,22 @@ function performAction(game: Game, action: Action, now: number) {
       game.enemyTier = action.tier
       startEnemyLoad(game, now, `Loading a tier ${action.tier} enemy...`)
       break
+    case 'setEncounterMode': {
+      if (action.mode !== 'normal' && action.mode !== 'boss') reject('Choose normal enemies or an area boss.')
+      if (game.encounterMode === action.mode) break
+      stopBattle(game)
+      game.autoBattle = false
+      game.encounterMode = action.mode
+      const status = action.mode === 'boss'
+        ? `Preparing ${currentBoss(game).name}, the next area boss...`
+        : `Returning to tier ${game.enemyTier} enemies...`
+      startEnemyLoad(game, now, status)
+      break
+    }
     case 'gather': {
       const resource = allResources.find(candidate => candidate.id === action.resourceId)
       if (!resource) reject('Unknown resource.')
+      requireArea(game, resource.skill)
       if (game.professions[resource.skill].level < resource.tier) reject('That resource is locked.')
       if (game.jobs[resource.skill]) reject(`A ${resource.skill} action is already running.`)
       const stats = professionStats(game, resource.skill)
@@ -1198,6 +1286,7 @@ function performAction(game: Game, action: Action, now: number) {
       break
     }
     case 'craft': {
+      requireArea(game, 'crafting')
       const recipe = recipeData.find(candidate => candidate.id === action.recipeId)
       if (!recipe) reject('Unknown recipe.')
       if (game.craftingProfession.level < recipeLevel(recipe)) reject(`Requires crafting level ${recipeLevel(recipe)}.`)
@@ -1233,6 +1322,7 @@ function performAction(game: Game, action: Action, now: number) {
       break
     }
     case 'cook': {
+      requireArea(game, 'cooking')
       const recipe = cookingRecipes.find(candidate => candidate.id === action.recipeId)
       if (!recipe) reject('Unknown cooking recipe.')
       if (game.cookingProfession.level < recipe.tier) reject(`Requires cooking level ${recipe.tier}.`)
@@ -1281,6 +1371,7 @@ function performAction(game: Game, action: Action, now: number) {
       break
     }
     case 'assignWorker': {
+      requireArea(game, 'workers')
       const resource = allResources.find(candidate => candidate.id === action.resourceId)
       if (!resource) reject('Unknown resource.')
       if (game.professions[resource.skill].level < resource.tier) reject('That resource is locked.')
@@ -1338,6 +1429,7 @@ function performAction(game: Game, action: Action, now: number) {
     case 'toggleAutoBattle':
       if (game.shopUpgrades.autoBattle < 1) reject('Purchase Arena Steward to unlock Auto-Battle.')
       if (typeof action.enabled !== 'boolean') reject('Invalid Auto-Battle setting.')
+      if (action.enabled && game.encounterMode === 'boss') reject('Auto-Battle cannot be enabled for area bosses.')
       game.autoBattle = action.enabled
       game.message = action.enabled ? 'Auto-Battle enabled.' : 'Auto-Battle disabled.'
       break
@@ -1362,6 +1454,7 @@ function performAction(game: Game, action: Action, now: number) {
       break
     }
     case 'allyFaction': {
+      requireArea(game, 'factions')
       const definition = factionDefinitions.find(faction => faction.id === action.factionId)
       if (!definition || game.level < definition.unlockLevel) reject('That faction is not unlocked yet.')
       game.alliedFaction = action.factionId
@@ -1369,8 +1462,9 @@ function performAction(game: Game, action: Action, now: number) {
       break
     }
     case 'revealDetectorTile': {
+      requireArea(game, 'metal detector')
       const detector = game.metalDetector
-      if (!detector.unlocked) reject('Defeat a tier 3 enemy to find the metal detector.')
+      if (!detector.unlocked) reject('Defeat The Buried Colossus to unlock the metal detector.')
       if (detector.drilling) reject('The detector is busy drilling to a new depth.')
       if (!Number.isInteger(action.tileId) || action.tileId < 0 || action.tileId >= detector.tiles.length) reject('Unknown detector tile.')
       const tile = detector.tiles[action.tileId]!
@@ -1387,8 +1481,9 @@ function performAction(game: Game, action: Action, now: number) {
       break
     }
     case 'startDetectorDrill': {
+      requireArea(game, 'metal detector')
       const detector = game.metalDetector
-      if (!detector.unlocked) reject('Defeat a tier 3 enemy to find the metal detector.')
+      if (!detector.unlocked) reject('Defeat The Buried Colossus to unlock the metal detector.')
       if (detector.drilling) reject('The depth drill is already running.')
       if (!Number.isFinite(action.gold) || !Number.isInteger(action.gold) || action.gold < 1) reject('Choose a whole amount of gold to drill.')
       if (action.gold > game.gold) reject('You do not have that much gold.')
@@ -1407,6 +1502,7 @@ function performAction(game: Game, action: Action, now: number) {
       break
     }
     case 'newDetectorSite':
+      requireArea(game, 'metal detector')
       if (!game.metalDetector.unlocked) reject('The metal detector has not been found yet.')
       if (!game.metalDetector.tiles.every(tile => tile.revealed)) reject('Uncover every tile before moving to a new site.')
       game.metalDetector.tiles = createDetectorTiles()
@@ -1484,6 +1580,10 @@ function publicState(game: Game, now = Date.now()) {
     autoEatCooldownRemaining: Math.max(0, game.nextAutoEatAt - now),
     foodHealingPowerBonus: game.shopUpgrades.healingPower * 10,
     foodHealingValues: Object.fromEntries(cookingRecipes.map(recipe => [recipe.outputItem, foodHealing(game, recipe.healing)])),
+    encounterMode: game.encounterMode,
+    defeatedBosses: game.defeatedBosses,
+    currentBossId: currentBoss(game).id,
+    unlockedPages: unlockedPages(game),
     enemyTier: game.enemyTier, highestEnemyTier: game.highestEnemyTier, enemy: game.enemy,
     battleStarted: game.battleActive, autoBattle: game.autoBattle, recovering: Boolean(game.recovery), enemyLoading: Boolean(game.enemyLoad),
     recoveryRemaining: game.recovery ? Math.max(0, game.recovery.endsAt - now) : 0,
@@ -1596,7 +1696,7 @@ function captureOfflineProgress(game: Game, now: number): { state: ReturnType<ty
   }
 }
 
-const config = { woods, rocks, fishingSpots, farmingPlots, allResources, rareMaterials, gearCatalog, recipes: recipeData, cookingRecipes, slotLabels, storePaths, shopUpgradeDetails, factionDefinitions, googleClientId }
+const config = { woods, rocks, fishingSpots, farmingPlots, allResources, rareMaterials, gearCatalog, recipes: recipeData, cookingRecipes, slotLabels, storePaths, shopUpgradeDetails, factionDefinitions, bossDefinitions, googleClientId }
 
 function passwordHash(password: string, salt: string) {
   return scryptSync(password, salt, 64).toString('hex')
@@ -2119,6 +2219,7 @@ app.post('/api/auction', async (request, response) => {
   const session = chatSession(request)
   if (!session) return response.status(401).json({ error: 'Log in to create a listing.' })
   const game = games.get(session.gameId)
+  if (game && !areaUnlocked(game, 'auction')) return response.status(403).json({ error: 'Defeat Crowned Void Drake to unlock the Auction House.' })
   const item = typeof request.body?.item === 'string' ? request.body.item : ''
   const quantity = Number(request.body?.quantity)
   const price = Number(request.body?.price)
@@ -2143,6 +2244,7 @@ app.post('/api/auction/:id/buy', async (request, response) => {
   const buyerSession = chatSession(request)
   if (!buyerSession) return response.status(401).json({ error: 'Log in to buy an auction.' })
   const buyer = games.get(buyerSession.gameId)
+  if (buyer && !areaUnlocked(buyer, 'auction')) return response.status(403).json({ error: 'Defeat Crowned Void Drake to unlock the Auction House.' })
   const { data: listing, error } = await supabase.from('auction_listings').select('*').eq('id', request.params.id).maybeSingle()
   if (error || !listing) return response.status(404).json({ error: 'That listing is no longer available.' })
   if (!buyer || listing.seller_username === buyerSession.username) return response.status(409).json({ error: 'You cannot buy your own listing.' })
@@ -2167,6 +2269,7 @@ app.delete('/api/auction/:id', async (request, response) => {
   const session = chatSession(request)
   if (!session) return response.status(401).json({ error: 'Log in to cancel a listing.' })
   const game = games.get(session.gameId)
+  if (game && !areaUnlocked(game, 'auction')) return response.status(403).json({ error: 'Defeat Crowned Void Drake to unlock the Auction House.' })
   const { data: listing } = await supabase.from('auction_listings').delete().eq('id', request.params.id).eq('seller_username', session.username).select('*').maybeSingle()
   if (!game || !listing) return response.status(404).json({ error: 'Listing not found or not owned by you.' })
   game.inventory[listing.item_name] = (game.inventory[listing.item_name] || 0) + listing.quantity

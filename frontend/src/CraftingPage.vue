@@ -215,7 +215,7 @@ function statusMessage(recipe: DisplayRecipe) {
 function actionLabel(recipe: DisplayRecipe) {
   const state = recipeState(recipe)
   if (state === 'active') return `CRAFTING · ${Math.floor(recipe.progress)}%`
-  if (state === 'locked') return `LOCKED UNTIL LEVEL ${requiredLevel(recipe)}`
+  if (state === 'locked') return `LOCKED UNTIL CRAFTING LEVEL ${requiredLevel(recipe)}`
   if (state === 'missing') return 'MATERIALS STILL NEEDED'
   if (props.craftingId) return 'FORGE IS BUSY'
   return `START CRAFT · ${formatDuration(effectiveDuration(recipe))}`
@@ -390,7 +390,7 @@ function activeTimeRemaining(recipe: DisplayRecipe) {
         <header class="recipe-detail-heading">
           <div class="recipe-detail-icon" :class="`is-${recipeState(selectedRecipe)}`">{{ categoryIcon(selectedRecipe) }}</div>
           <div>
-            <span>STEP 2 · {{ selectedRecipe.outputGear ? 'EQUIPMENT' : 'COMPONENT' }} · LEVEL {{ requiredLevel(selectedRecipe) }}</span>
+            <span>STEP 2 · {{ selectedRecipe.outputGear ? 'EQUIPMENT' : 'COMPONENT' }} · TIER {{ requiredLevel(selectedRecipe) }}</span>
             <h2>{{ selectedRecipe.name }}</h2>
             <p>{{ selectedRecipe.description }}</p>
           </div>

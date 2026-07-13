@@ -57,6 +57,12 @@ The backend verifies each Google ID token for the configured client ID, requires
 
 Players can also register and log in with a username and password. The browser stores only the issued game session token and game ID in `localStorage`, so refreshing the page restores the session without retaining the player's password.
 
+## Area progression and navigation
+
+New heroes begin with Battle, Inventory, Achievements, High Scores, and Shop. The Battle page has a separate Area Boss encounter mode with ten sequential bosses. Their first defeats unlock Woodcutting, Mining, Crafting, Fishing, Farming, Cooking, Workers, Metal Detector, Factions, and Auction House, in that order. Saves created before this progression system keep every existing area unlocked.
+
+Desktop navigation groups destinations by Adventure, Professions, Realm, and Character. Mobile uses a persistent Battle, Explore, Inventory, and Menu bar; the Explore sheet also shows the next boss and area unlock.
+
 ## Local development
 
 Create `backend/.env` with `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, and `GOOGLE_CLIENT_ID`. Run `npm run dev` in both `backend` and `frontend`. The frontend defaults to `http://localhost:3000` while running in Vite development mode.
