@@ -30,10 +30,10 @@ const {
   dailyObjectives, dailyResetAt, metalDetector,
   craftingRecipes, cookingRecipeList, battleFoods, foodHealingValues, foodHotValues, recipeLevels, storeListings, materialGroups, toasts,
   leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
-  chatMessages, chatOnline, chatError, clan, clanInvitations, publicClans, clanMessages, clanOnline, clanError, clanChatError, clanNotice, clanActionRunning,
+  chatMessages, chatOnline, chatError, clan, clanInvitations, publicClans, clanMessages, clanOnline, clanError, clanChatError, clanNotice, clanActionRunning, giftError, giftNotice, giftRunning,
   auctionListings, auctionError, offlineProgress,
   professionStats, professionXpNeeded, isUnlocked, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip,
-  submitAuth, switchAuthMode, loginWithGoogle, submitDisplayName, startBattle, setEncounterMode, changeEnemyTier, gather, craft, cook, eatFood, selectFood, toggleAutoEat, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadClans, createClan, joinClan, inviteClanMember, acceptClanInvitation, declineClanInvitation, leaveClan, disbandClan, loadAuction, createAuction, buyAuction, cancelAuction,
+  submitAuth, switchAuthMode, loginWithGoogle, submitDisplayName, startBattle, setEncounterMode, changeEnemyTier, gather, craft, cook, eatFood, selectFood, toggleAutoEat, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadClans, createClan, joinClan, inviteClanMember, acceptClanInvitation, declineClanInvitation, leaveClan, disbandClan, contributeToClan, sendGift, loadAuction, createAuction, buyAuction, cancelAuction,
   displayNameRequired, displayNameDraft, displayNameError, displayNameLoading,
 } = useGame()
 
@@ -44,6 +44,7 @@ const craftingRecipeTrail = ref<string[]>([])
 const toastIcons = {
   achievement: '★',
   critical: '✦',
+  gift: '🎁',
   level: '▲',
   rare: '◆',
   yield: '×',
@@ -90,7 +91,7 @@ watch(playerName, name => {
 
     <MetalDetectorPage v-else-if="page === 'metal detector'" :detector="metalDetector" :gold="gold" @reveal="revealDetectorTile" @drill="startDetectorDrill" @relocate="newDetectorSite" />
 
-    <ClanPage v-else-if="page === 'clans'" :clan="clan" :invitations="clanInvitations" :public-clans="publicClans" :error="clanError" :notice="clanNotice" :busy="clanActionRunning" @refresh="loadClans" @create="createClan" @join="joinClan" @invite="inviteClanMember" @accept="acceptClanInvitation" @decline="declineClanInvitation" @leave="leaveClan" @disband="disbandClan" />
+    <ClanPage v-else-if="page === 'clans'" :clan="clan" :invitations="clanInvitations" :public-clans="publicClans" :inventory="inventory" :error="clanError" :notice="clanNotice" :busy="clanActionRunning" :gift-error="giftError" :gift-notice="giftNotice" :gift-busy="giftRunning" @refresh="loadClans" @create="createClan" @join="joinClan" @invite="inviteClanMember" @accept="acceptClanInvitation" @decline="declineClanInvitation" @leave="leaveClan" @disband="disbandClan" @contribute="contributeToClan" @gift="sendGift" />
 
     <section v-else-if="page === 'workers'" class="page-content"><div class="page-heading"><div><p class="eyebrow">AUTOMATION</p><h1>Workers</h1><p>Workers use elapsed time and operate at exactly 20% of manual speed. Free Workers join at levels 2, 5, 10, 15, and every 5 levels after.</p></div><div class="worker-count">{{ freeWorkers }} FREE / {{ workers }} TOTAL</div></div><div v-if="!workers" class="empty-state">You have no Workers yet. Reach level 2 for a free Worker, or hire one in the Shop.</div><div class="worker-list"><article v-for="resource in allResources.filter(candidate => tabs.includes(candidate.skill))" :key="resource.id" class="worker-row" :class="{ locked: !isUnlocked(resource) }"><span class="resource-icon small">{{ resource.icon }}</span><div class="worker-resource"><h3>{{ resource.name }} <small>Tier {{ resource.tier }}</small></h3><div class="meter"><i :style="{ width: `${workerProgress[resource.id] || 0}%` }"></i></div></div><button @click="assignWorker(resource,-1)" :disabled="!(workerAssignments[resource.id] || 0)">−</button><strong>{{ workerAssignments[resource.id] || 0 }}</strong><button @click="assignWorker(resource,1)" :disabled="freeWorkers <= 0 || !isUnlocked(resource)">+</button></article></div></section>
 
@@ -176,6 +177,10 @@ watch(playerName, name => {
         Gold
       </button>
 
+      <button :class="{ selected: leaderboardCategory === 'clans' }" @click="loadLeaderboard('clans')">
+        Clans
+      </button>
+
       <button :class="{ selected: leaderboardCategory === 'woodcutting' }" @click="loadLeaderboard('woodcutting')">
         Woodcutting
       </button>
@@ -227,7 +232,7 @@ watch(playerName, name => {
           :key="player.username"
         >
           <strong>#{{ player.rank }}</strong>
-          <span>{{ player.name }}</span>
+          <span>{{ player.name }}<small v-if="player.subtitle">{{ player.subtitle }}</small></span>
           <b>{{ player.score.toLocaleString() }}</b>
         </li>
       </ol>

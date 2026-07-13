@@ -23,6 +23,7 @@ import {
 } from './detector.ts'
 import { AUTO_EAT_COOLDOWN_MS, AUTO_EAT_HEALTH_THRESHOLD, autoEatReady, deathGoldPenalty, healOverTimeProgress, stackedHealOverTimeTiming, upgradedFoodHealing } from './combatFood.ts'
 import { sanitizeClanDescription, sanitizeClanMessage, sanitizeClanName, sanitizeClanVisibility, sanitizePlayerIdentifier, type ClanVisibility } from './clans.ts'
+import { clanProgress, contributionValue, dailyMaterialIndex, utcDate } from './clanProgress.ts'
 import { supabase } from "../supabase.ts";
 import { canonicalDisplayName, googleUsernameCandidates, sanitizeDisplayName, verifyGoogleCredential } from './googleAuth.ts'
 
@@ -74,7 +75,7 @@ const leaderboardCategories = {
 } as const
 
 type LeaderboardCategory =
-  keyof typeof leaderboardCategories
+  keyof typeof leaderboardCategories | 'clans'
 
 const app = express()
 const port = Number(process.env.PORT) || 3000
@@ -94,7 +95,7 @@ type Profession = { level: number; xp: number }
 type Enemy = { name: string; archetype: string; health: number; maxHealth: number; attack: number; defense: number; attackSpeed: number; xp: number; gold: number }
 type EncounterMode = 'normal' | 'boss'
 type ShopUpgrade = 'medic' | 'scouting' | 'training' | 'fortitude' | 'autoBattle' | 'autoEat' | 'healingPower'
-type EventKind = 'achievement' | 'critical' | 'level' | 'rare' | 'yield' | 'worker'
+type EventKind = 'achievement' | 'critical' | 'gift' | 'level' | 'rare' | 'yield' | 'worker'
 type GameEvent = { id: number; kind: EventKind; title: string; detail: string }
 type AchievementKind = 'level' | 'kills' | 'deaths' | 'tier' | 'gathered' | 'crafted' | 'cooked' | 'workers' | 'woodLevel' | 'mineLevel' | 'fishLevel' | 'farmLevel' | 'cookLevel' | 'gear' | 'actions' | 'goldEarned' | 'goldSpent'
 type AchievementDefinition = { id: string; name: string; description: string; kind: AchievementKind; goal: number; reward: number; icon: string; titleReward?: string }
@@ -364,6 +365,7 @@ type ClanRow = {
   visibility: ClanVisibility
   owner_username: string
   created_at: string
+  contribution_xp: number
 }
 
 type ClanMembershipRow = {
@@ -2295,6 +2297,29 @@ async function playerNameMap(usernames: string[]): Promise<Map<string, string>> 
   return new Map((data ?? []).map(player => [player.username, player.name || player.username]))
 }
 
+async function findPlayerByIdentifier(identifier: string) {
+  const { data: players, error } = await supabase.from('players').select('username, name')
+  if (error) throw error
+  const accountUsername = identifier.toLowerCase()
+  return players?.find(player => player.username.toLowerCase() === accountUsername)
+    ?? players?.find(player => canonicalDisplayName(player.name || '') === canonicalDisplayName(identifier))
+    ?? null
+}
+
+function dailyClanRequest(clanId: string, now = Date.now()) {
+  const date = utcDate(now)
+  const resource = allResources[dailyMaterialIndex(clanId, date, allResources.length)]!
+  const resetAt = Date.parse(`${date}T00:00:00.000Z`) + 86_400_000
+  return {
+    date,
+    item: resource.item,
+    tier: resource.tier,
+    icon: resource.icon,
+    valueEach: resource.tier,
+    resetsAt: resetAt,
+  }
+}
+
 function clanOnlineCount(usernames: string[]) {
   const members = new Set(usernames)
   const cutoff = Date.now() - ONLINE_WINDOW_MS
@@ -2307,18 +2332,25 @@ async function clanDetails(username: string) {
   const membership = await clanMembership(username)
   if (!membership) return null
 
-  const [clanResult, membersResult] = await Promise.all([
+  const today = utcDate()
+  const [clanResult, membersResult, contributorsResult, dailyResult] = await Promise.all([
     supabase.from('clans').select('*').eq('id', membership.clan_id).maybeSingle(),
     supabase.from('clan_members').select('clan_id, username, role, joined_at').eq('clan_id', membership.clan_id).order('joined_at', { ascending: true }),
+    supabase.from('clan_contributor_totals').select('*').eq('clan_id', membership.clan_id).order('total_value', { ascending: false }).limit(10),
+    supabase.from('clan_contributions').select('quantity, value').eq('clan_id', membership.clan_id).eq('contribution_date', today),
   ])
   if (clanResult.error) throw clanResult.error
   if (membersResult.error) throw membersResult.error
+  if (contributorsResult.error) throw contributorsResult.error
+  if (dailyResult.error) throw dailyResult.error
   if (!clanResult.data) return null
 
   const clan = clanResult.data as ClanRow
   const members = (membersResult.data ?? []) as ClanMembershipRow[]
-  const names = await playerNameMap([clan.owner_username, ...members.map(member => member.username)])
+  const contributors = contributorsResult.data ?? []
+  const names = await playerNameMap([clan.owner_username, ...members.map(member => member.username), ...contributors.map(contributor => contributor.username)])
   const onlineCutoff = Date.now() - ONLINE_WINDOW_MS
+  const progress = clanProgress(clan.contribution_xp || 0)
   return {
     id: clan.id,
     name: clan.name,
@@ -2330,6 +2362,16 @@ async function clanDetails(username: string) {
     memberCount: members.length,
     role: membership.role,
     online: clanOnlineCount(members.map(member => member.username)),
+    ...progress,
+    dailyRequest: dailyClanRequest(clan.id),
+    dailyContributionValue: (dailyResult.data ?? []).reduce((total, contribution) => total + Number(contribution.value), 0),
+    dailyContributionItems: (dailyResult.data ?? []).reduce((total, contribution) => total + Number(contribution.quantity), 0),
+    topContributors: contributors.map(contributor => ({
+      username: contributor.username,
+      name: names.get(contributor.username) || contributor.username,
+      totalItems: Number(contributor.total_items),
+      totalValue: Number(contributor.total_value),
+    })),
     members: members.map(member => ({
       username: member.username,
       name: names.get(member.username) || member.username,
@@ -2368,6 +2410,7 @@ async function publicClanSummaries() {
     ownerName: names.get(clan.owner_username) || clan.owner_username,
     createdAt: clan.created_at,
     memberCount: counts.get(clan.id) || 0,
+    ...clanProgress(clan.contribution_xp || 0),
   }))
 }
 
@@ -2494,6 +2537,48 @@ app.post('/api/clans', async (request, response) => {
   }
 })
 
+app.post('/api/clans/contribute', async (request, response) => {
+  const session = chatSession(request)
+  if (!session) return response.status(401).json({ error: 'Log in to contribute to a clan.' })
+  const game = games.get(session.gameId)
+  try {
+    const membership = await clanMembership(session.username)
+    if (!membership || !game) return response.status(403).json({ error: 'Join a clan before contributing.' })
+    const dailyRequest = dailyClanRequest(membership.clan_id)
+    const submittedItem = typeof request.body?.item === 'string' ? request.body.item : ''
+    const quantity = Number(request.body?.quantity)
+    if (submittedItem !== dailyRequest.item) return response.status(409).json({ error: `The daily request changed. Your clan now needs ${dailyRequest.item}.` })
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 1_000_000) {
+      return response.status(400).json({ error: 'Contribution quantity must be a positive whole number.' })
+    }
+    if ((game.inventory[dailyRequest.item] || 0) < quantity) return response.status(409).json({ error: `You do not own ${quantity} ${dailyRequest.item}.` })
+
+    const value = contributionValue(quantity, dailyRequest.tier)
+    game.inventory[dailyRequest.item] -= quantity
+    const { error } = await supabase.rpc('record_clan_contribution', {
+      contribution_id: randomUUID(),
+      target_clan_id: membership.clan_id,
+      contributor_username: session.username,
+      contributed_item: dailyRequest.item,
+      contributed_quantity: quantity,
+      contributed_tier: dailyRequest.tier,
+      contributed_value: value,
+      contributed_date: dailyRequest.date,
+    })
+    if (error) {
+      game.inventory[dailyRequest.item] += quantity
+      throw error
+    }
+
+    game.message = `Contributed ${quantity} × ${dailyRequest.item} to the clan for ${value} clan XP.`
+    game.revision++
+    await saveGame(session.username, game)
+    return response.json({ ...(await clanSnapshot(session.username)), state: publicState(game) })
+  } catch (error) {
+    return clanServerError(response, error, 'Could not record the clan contribution.')
+  }
+})
+
 app.post('/api/clans/:id/join', async (request, response) => {
   const session = chatSession(request)
   if (!session) return response.status(401).json({ error: 'Log in to join a clan.' })
@@ -2520,11 +2605,7 @@ app.post('/api/clans/invitations', async (request, response) => {
     const membership = await clanMembership(session.username)
     if (!membership || membership.role !== 'owner') return response.status(403).json({ error: 'Only the clan creator can invite players.' })
     const identifier = sanitizePlayerIdentifier(request.body?.username)
-    const { data: players, error } = await supabase.from('players').select('username, name')
-    if (error) throw error
-    const identifierUsername = identifier.toLowerCase()
-    const target = players?.find(player => player.username.toLowerCase() === identifierUsername)
-      ?? players?.find(player => canonicalDisplayName(player.name || '') === canonicalDisplayName(identifier))
+    const target = await findPlayerByIdentifier(identifier)
     if (!target) return response.status(404).json({ error: 'No player with that username was found.' })
     if (target.username === session.username) return response.status(409).json({ error: 'You are already the clan creator.' })
     if (await clanMembership(target.username)) return response.status(409).json({ error: `${target.name || target.username} already belongs to a clan.` })
@@ -2668,6 +2749,55 @@ app.post('/api/chat', (request, response) => {
   return response.status(201).json({ messages: chatMessages, online: onlineCount() })
 })
 
+app.post('/api/gifts', async (request, response) => {
+  const session = chatSession(request)
+  if (!session) return response.status(401).json({ error: 'Log in to send a gift.' })
+  const sender = games.get(session.gameId)
+  try {
+    const recipientIdentifier = sanitizePlayerIdentifier(request.body?.recipient)
+    const item = typeof request.body?.item === 'string' ? request.body.item : ''
+    const quantity = Number(request.body?.quantity)
+    if (!sender || !item || !Number.isInteger(quantity) || quantity < 1 || quantity > 1_000_000) {
+      return response.status(400).json({ error: 'Choose a player, item, and positive whole-number quantity.' })
+    }
+    const ownedQuantity = Object.prototype.hasOwnProperty.call(sender.inventory, item) ? Number(sender.inventory[item]) : 0
+    if (!Number.isFinite(ownedQuantity) || ownedQuantity < quantity) return response.status(409).json({ error: `You do not own ${quantity} ${item}.` })
+
+    const recipientIdentity = await findPlayerByIdentifier(recipientIdentifier)
+    if (!recipientIdentity) return response.status(404).json({ error: 'No player with that username was found.' })
+    if (recipientIdentity.username === session.username) return response.status(409).json({ error: 'You cannot send a gift to yourself.' })
+    const { data: recipientRow, error } = await supabase
+      .from('players')
+      .select('username, name, game_id, game_state')
+      .eq('username', recipientIdentity.username)
+      .maybeSingle()
+    if (error) throw error
+    if (!recipientRow) return response.status(404).json({ error: 'That player could not be loaded.' })
+
+    const recipient = games.get(recipientRow.game_id) ?? deserializeGame(recipientRow.game_state)
+    recipient.id = recipientRow.game_id
+    recipient.name = recipientRow.name
+    games.set(recipient.id, recipient)
+    gameOwners.set(recipient.id, recipientRow.username)
+
+    const availableNow = Object.prototype.hasOwnProperty.call(sender.inventory, item) ? Number(sender.inventory[item]) : 0
+    if (!Number.isFinite(availableNow) || availableNow < quantity) return response.status(409).json({ error: `You no longer own ${quantity} ${item}.` })
+    sender.inventory[item] -= quantity
+    recipient.inventory[item] = (recipient.inventory[item] || 0) + quantity
+    sender.message = `Sent ${quantity} × ${item} to ${recipient.name}.`
+    recipient.message = `${sender.name} gifted you ${quantity} × ${item}.`
+    pushEvent(recipient, 'gift', 'Gift received', `${sender.name} sent ${quantity} × ${item}`)
+    sender.revision++
+    recipient.revision++
+    await Promise.all([saveGame(session.username, sender), saveGame(recipientRow.username, recipient)])
+    return response.json({ state: publicState(sender) })
+  } catch (error) {
+    if (error instanceof Error && /player username/.test(error.message)) return response.status(400).json({ error: error.message })
+    console.error('Gift error:', error)
+    return response.status(500).json({ error: 'Could not send the gift.' })
+  }
+})
+
 app.get('/api/auction', async (request, response) => {
   if (!chatSession(request)) return response.status(401).json({ error: 'Log in to use the auction house.' })
   const { data, error } = await supabase.from('auction_listings').select('*').order('created_at', { ascending: false }).limit(100)
@@ -2740,6 +2870,40 @@ app.get(
   async (request, response) => {
     const category =
       request.params.category as LeaderboardCategory
+
+    if (category === 'clans') {
+      const { data, error } = await supabase
+        .from('clans')
+        .select('id, name, contribution_xp')
+        .order('contribution_xp', { ascending: false })
+        .order('created_at', { ascending: true })
+        .limit(10)
+      if (error) {
+        console.error('Clan leaderboard error:', error)
+        return response.status(500).json({ error: 'Could not load the clan leaderboard. Apply the latest backend/clan-schema.sql migration.' })
+      }
+      const clans = data ?? []
+      const { data: members, error: memberError } = clans.length
+        ? await supabase.from('clan_members').select('clan_id').in('clan_id', clans.map(clan => clan.id))
+        : { data: [], error: null }
+      if (memberError) return response.status(500).json({ error: 'Could not load clan member counts.' })
+      const memberCounts = new Map<string, number>()
+      for (const member of members ?? []) memberCounts.set(member.clan_id, (memberCounts.get(member.clan_id) || 0) + 1)
+      return response.json({
+        category,
+        label: 'Clan Level',
+        rows: clans.map((clan, index) => {
+          const progress = clanProgress(Number(clan.contribution_xp))
+          return {
+            rank: index + 1,
+            username: clan.id,
+            name: clan.name,
+            score: progress.level,
+            subtitle: `${progress.totalXp.toLocaleString()} contribution XP · ${memberCounts.get(clan.id) || 0} members`,
+          }
+        }),
+      })
+    }
 
     const leaderboard =
       leaderboardCategories[category]
