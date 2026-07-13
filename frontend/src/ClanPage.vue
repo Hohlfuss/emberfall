@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import type { ClanDetails, ClanInvitation, ClanSummary, ClanVisibility } from './useGame'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import type { ClanDetails, ClanInvitation, ClanRaidCombat, ClanSummary, ClanVisibility } from './useGame'
 import GiftItems from './GiftItems.vue'
 
 const props = defineProps<{
   clan: ClanDetails | null
   invitations: ClanInvitation[]
   publicClans: ClanSummary[]
+  playerName: string
+  combatStats: { maxHealth: number; attack: number; defense: number; attackSpeed: number }
+  raidCombat: ClanRaidCombat | null
   error: string
   notice: string
   busy: boolean
@@ -38,8 +41,19 @@ const search = ref('')
 const contributionQuantity = ref(1)
 const ownedDailyMaterial = computed(() => props.clan ? props.inventory[props.clan.dailyRequest.item] || 0 : 0)
 const contributionPreview = computed(() => props.clan ? Math.max(0, contributionQuantity.value || 0) * props.clan.dailyRequest.valueEach : 0)
-const raidHealthPercent = computed(() => props.clan ? Math.max(0, Math.min(100, props.clan.raid.currentHealth / props.clan.raid.maxHealth * 100)) : 0)
 const highestRaidDamage = computed(() => props.clan ? Math.max(1, ...props.clan.raid.contributors.map(contributor => contributor.totalDamage)) : 1)
+const raidPlayerHealth = ref(0)
+const raidBossHealth = ref(0)
+const raidAnimating = ref(false)
+const raidLastActor = ref<'player' | 'boss' | null>(null)
+const raidLastDamage = ref(0)
+const replayTimers: Array<ReturnType<typeof setTimeout>> = []
+const raidPlayerMaxHealth = computed(() => props.raidCombat?.player.maxHealth || props.combatStats.maxHealth)
+const raidBossMaxHealth = computed(() => props.raidCombat?.boss.maxHealth || props.clan?.raid.maxHealth || 1)
+const raidPlayerPercent = computed(() => Math.max(0, Math.min(100, raidPlayerHealth.value / raidPlayerMaxHealth.value * 100)))
+const raidBossPercent = computed(() => Math.max(0, Math.min(100, raidBossHealth.value / raidBossMaxHealth.value * 100)))
+const raidPlayerAttackSpeed = computed(() => props.raidCombat?.player.attackSpeed || props.combatStats.attackSpeed)
+const raidBossAttackSpeed = computed(() => props.raidCombat?.boss.attackSpeed || props.clan?.raid.attackSpeed || 0)
 
 const filteredClans = computed(() => {
   const query = search.value.trim().toLowerCase()
@@ -51,6 +65,41 @@ watch(() => props.notice, notice => {
   if (notice.startsWith('Invitation sent')) inviteUsername.value = ''
   if (notice.startsWith('Contributed')) contributionQuantity.value = 1
 })
+
+watch(() => props.clan?.raid.currentHealth, health => {
+  if (!raidAnimating.value) raidBossHealth.value = health || 0
+}, { immediate: true })
+
+watch(() => props.combatStats.maxHealth, health => {
+  if (!raidAnimating.value) raidPlayerHealth.value = health
+}, { immediate: true })
+
+watch(() => props.raidCombat, combat => {
+  replayTimers.splice(0).forEach(timer => clearTimeout(timer))
+  raidLastActor.value = null
+  raidLastDamage.value = 0
+  if (!combat) return
+
+  raidAnimating.value = true
+  raidPlayerHealth.value = combat.player.maxHealth
+  raidBossHealth.value = combat.boss.startHealth
+  combat.timeline.forEach(event => {
+    replayTimers.push(setTimeout(() => {
+      raidPlayerHealth.value = event.playerHealth
+      raidBossHealth.value = event.bossHealth
+      raidLastActor.value = event.actor
+      raidLastDamage.value = event.damage
+    }, event.at))
+  })
+  replayTimers.push(setTimeout(() => {
+    raidPlayerHealth.value = combat.finalPlayerHealth
+    raidBossHealth.value = combat.finalBossHealth
+    raidAnimating.value = false
+    raidLastActor.value = null
+  }, combat.duration + 650))
+})
+
+onBeforeUnmount(() => replayTimers.splice(0).forEach(timer => clearTimeout(timer)))
 
 function createClan() {
   if (clanName.value.trim().length < 3) return
@@ -115,10 +164,27 @@ function dateTime(value: string | number) {
             </header>
 
             <p class="raid-description">{{ clan.raid.description }}</p>
-            <div class="raid-health">
-              <div><span>{{ clan.raid.defeated ? 'BOSS DEFEATED' : 'SHARED BOSS HEALTH' }}</span><strong>{{ clan.raid.currentHealth.toLocaleString() }} / {{ clan.raid.maxHealth.toLocaleString() }}</strong></div>
-              <div class="meter"><i :style="{ width: `${raidHealthPercent}%` }"></i></div>
+            <div class="raid-arena" :class="{ fighting: raidAnimating }">
+              <article class="raid-combatant raid-hero" :class="{ struck: raidLastActor === 'boss' }">
+                <header><b>⚔</b><div><span>CLAN RAIDER</span><strong>{{ playerName }}</strong></div></header>
+                <div class="raid-combat-health"><span>HEALTH</span><strong>{{ raidPlayerHealth.toLocaleString() }} / {{ raidPlayerMaxHealth.toLocaleString() }}</strong></div>
+                <div class="meter"><i :style="{ width: `${raidPlayerPercent}%` }"></i></div>
+                <footer><span>ATTACK {{ combatStats.attack }}</span><span>DEFENSE {{ combatStats.defense }}</span><strong>ATTACK EVERY {{ (raidPlayerAttackSpeed / 1000).toFixed(2) }}s</strong></footer>
+                <em v-if="raidLastActor === 'boss'">−{{ raidLastDamage }}</em>
+              </article>
+
+              <div class="raid-versus">VS</div>
+
+              <article class="raid-combatant raid-enemy" :class="{ struck: raidLastActor === 'player' }">
+                <header><div><span>SHARED RAID BOSS</span><strong>{{ clan.raid.name }}</strong></div><b>{{ clan.raid.icon }}</b></header>
+                <div class="raid-combat-health"><span>{{ clan.raid.defeated && !raidAnimating ? 'DEFEATED' : 'HEALTH' }}</span><strong>{{ raidBossHealth.toLocaleString() }} / {{ raidBossMaxHealth.toLocaleString() }}</strong></div>
+                <div class="meter"><i :style="{ width: `${raidBossPercent}%` }"></i></div>
+                <footer><span>ATTACK {{ clan.raid.attack }}</span><span>DEFENSE {{ clan.raid.defense }}</span><strong>ATTACK EVERY {{ (raidBossAttackSpeed / 1000).toFixed(2) }}s</strong></footer>
+                <em v-if="raidLastActor === 'player'">−{{ raidLastDamage }}</em>
+              </article>
             </div>
+
+            <p v-if="raidCombat && !raidAnimating" class="raid-outcome" :class="{ victory: raidCombat.survived }">{{ raidCombat.survived ? `${clan.raid.name} defeated — raid victory!` : 'Raid attempt ended at 0 health — no death penalty or recovery timer.' }}</p>
 
             <div class="raid-facts">
               <div><span>WEEK ENDS</span><strong>{{ dateTime(clan.raid.endsAt) }}</strong></div>
@@ -214,9 +280,9 @@ function dateTime(value: string | number) {
 <style scoped>
 .clan-page{width:min(100%,1280px);padding-bottom:110px}.clan-heading>div>p:last-child{max-width:680px}.clan-refresh,.clan-card button,.clan-invitations button{padding:10px 13px;border:1px solid #ffffff1a;color:#92949a;background:#ffffff06;font:700 8px Cinzel;letter-spacing:.06em;cursor:pointer}.clan-refresh{margin-bottom:23px;border-color:#a47a3c;color:#d4a553;background:#a47a3c12}.clan-feedback{padding:12px 14px;border:1px solid;font-size:10px}.clan-feedback.error{border-color:#a9564c66;color:#d77b70;background:#a9564c12}.clan-feedback.success{border-color:#60a86c66;color:#82c98d;background:#60a86c12}.clan-invitations{margin-bottom:18px;padding:18px;border:1px solid #d5a54e4f;background:#d5a54e0a}.clan-invitations>header,.clan-card>header{display:flex;align-items:end;justify-content:space-between;margin-bottom:13px}.clan-invitations header span,.clan-card header span{color:#98753f;font-size:7px;font-weight:800;letter-spacing:.15em}.clan-invitations h2,.clan-card h2{margin:4px 0 0;font-size:21px;text-transform:none}.clan-invitations>header>strong,.clan-card>header>strong{color:#d8a94f;font:800 19px Cinzel}.clan-invitations article{padding:12px;display:grid;grid-template-columns:35px 1fr auto;align-items:center;gap:11px;border:1px solid #ffffff10;background:#090a0e}.clan-invitations article>b{font-size:24px}.clan-invitations article strong,.clan-invitations article small{display:block}.clan-invitations article strong{font:700 13px Cinzel}.clan-invitations article small{margin-top:4px;color:#74767b;font-size:9px}.invitation-actions{display:flex;gap:5px}.accent{border-color:#bd8b3e!important;color:#171008!important;background:linear-gradient(#e1b45b,#ad7328)!important}.clan-banner{padding:24px;display:grid;grid-template-columns:72px minmax(0,1fr) auto;align-items:center;gap:20px;border:1px solid #d5a54e55;background:radial-gradient(circle at 80% 0,#d5a54e18,transparent 42%),#0b0d11}.clan-banner>b{display:grid;place-items:center;width:68px;height:68px;border:1px solid #d5a54e55;background:#d5a54e0b;font-size:37px}.clan-banner>div>span{color:#c3954b;font-size:8px;font-weight:800;letter-spacing:.15em}.clan-banner h2{margin:5px 0;font-size:34px;text-transform:none}.clan-banner p{margin:0 0 7px;color:#8a8c91;font-size:10px}.clan-banner small{color:#62646a;font-size:8px}.clan-banner aside{min-width:100px;text-align:center}.clan-banner aside>strong,.clan-banner aside>span,.clan-banner aside>small{display:block}.clan-banner aside>strong{color:#e2b45b;font:800 31px Cinzel}.clan-banner aside>span{color:#777a80;font-size:7px;letter-spacing:.13em}.clan-banner aside>small{margin-top:8px;color:#78b783}.clan-banner aside i{display:inline-block;width:6px;height:6px;margin-right:5px;border-radius:50%;background:#63c478;box-shadow:0 0 7px #63c478}.clan-dashboard,.clan-discovery{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(300px,.65fr);align-items:start;gap:14px;margin-top:14px}.clan-discovery{grid-template-columns:minmax(300px,.75fr) minmax(0,1.25fr)}.clan-card{padding:20px;border:1px solid #ffffff12;background:linear-gradient(145deg,#ffffff06,transparent)}.clan-card>p{color:#777a80;font-size:9px;line-height:1.5}.clan-side{display:grid;gap:14px}.clan-members{display:grid;gap:5px}.clan-members article{padding:11px;display:grid;grid-template-columns:8px minmax(0,1fr) auto;align-items:center;gap:10px;border:1px solid #ffffff0d;background:#07080b}.clan-members article>i{width:6px;height:6px;border-radius:50%;background:#4b4e54}.clan-members article>i.online{background:#63c478;box-shadow:0 0 7px #63c478}.clan-members article strong,.clan-members article small{display:block}.clan-members article strong{font:600 11px Cinzel}.clan-members article small{margin-top:3px;color:#5f6268;font-size:8px}.clan-members article>span{color:#98783f;font-size:7px;font-weight:800}.clan-form{display:grid;gap:13px}.clan-form label{display:grid;gap:6px}.clan-form label>span,.clan-form legend{color:#777a80;font-size:7px;font-weight:800;letter-spacing:.12em}.clan-form input,.clan-form textarea,.clan-search input{width:100%;min-width:0;padding:11px;border:1px solid #ffffff17;outline:0;color:#ddd;background:#06070a;resize:vertical}.clan-form input:focus,.clan-form textarea:focus,.clan-search:focus-within{border-color:#aa7e3e}.clan-form label>small{justify-self:end;margin-top:-3px;color:#55585e;font-size:7px}.clan-form fieldset{padding:0;display:grid;grid-template-columns:1fr 1fr;gap:6px;border:0}.clan-form legend{margin-bottom:6px}.clan-form fieldset button{min-height:75px;padding:10px;display:grid;grid-template-columns:25px 1fr;align-items:start;gap:7px;text-align:left}.clan-form fieldset button>b{font-size:19px}.clan-form fieldset button span>*{display:block}.clan-form fieldset button strong{color:#b6b7b8;font-size:9px}.clan-form fieldset button small{margin-top:4px;color:#64666b;font:400 8px/1.4 Inter}.clan-form fieldset button.selected{border-color:#d5a54e77;background:#d5a54e0d}.clan-form fieldset button.selected strong{color:#e4b65f}.clan-form.compact{grid-template-columns:1fr auto;align-items:end}.clan-danger{border-color:#8e494244}.clan-danger button{width:100%;border-color:#9e5148;color:#d27b70;background:#9e514812}.clan-search{display:grid;grid-template-columns:32px 1fr;align-items:center;margin-bottom:10px;border:1px solid #ffffff15;background:#06070a}.clan-search>span{color:#73767b;text-align:center}.clan-search input{border:0}.public-clans{max-height:560px;display:grid;gap:6px;overflow-y:auto}.public-clans article{padding:13px;display:grid;grid-template-columns:35px minmax(0,1fr) auto;align-items:center;gap:11px;border:1px solid #ffffff0e;background:#07080b}.public-clans article>b{font-size:24px}.public-clans article strong{font:700 12px Cinzel}.public-clans article p{margin:4px 0;color:#777a80;font-size:9px}.public-clans article small{color:#5e6167;font-size:8px}.clan-empty{padding:35px;text-align:center;color:#65686e;font-size:10px}
 .clan-main{display:grid;gap:14px}.contribution-card{border-color:#6f9a7047;background:linear-gradient(135deg,#62966c10,transparent)}.contribution-card>header>b{font-size:31px}.clan-level-progress{padding:12px;border:1px solid #ffffff0e;background:#06070a}.clan-level-progress>div:first-child{display:flex;justify-content:space-between;gap:10px}.clan-level-progress span,.contribution-form span,.daily-material aside span{color:#74777d;font-size:7px;font-weight:800;letter-spacing:.1em}.clan-level-progress strong{color:#e1b35a;font-size:9px}.clan-level-progress .meter{margin:8px 0 6px}.clan-level-progress>small{color:#585b61;font-size:7px}.daily-material{margin-top:8px;padding:13px;display:grid;grid-template-columns:45px minmax(0,1fr) auto;align-items:center;gap:12px;border:1px solid #6f9a7040;background:#5f96680a}.daily-material>b{font-size:32px;text-align:center}.daily-material>div span,.daily-material>div strong,.daily-material>div small{display:block}.daily-material>div span{color:#76a37d;font-size:7px;font-weight:800;letter-spacing:.12em}.daily-material>div strong{margin-top:3px;font:700 13px Cinzel}.daily-material>div small{margin-top:4px;color:#666970;font-size:8px}.daily-material>aside{text-align:right}.daily-material>aside strong{display:block;color:#86bd8c;font:800 20px Cinzel}.contribution-form{margin-top:8px;display:grid;grid-template-columns:100px 1fr auto;align-items:end;gap:8px}.contribution-form label{display:grid;gap:5px}.contribution-form input{width:100%;padding:10px;border:1px solid #ffffff17;outline:0;color:#ddd;background:#06070a}.contribution-form>div{padding:7px 3px}.contribution-form>div span,.contribution-form>div strong{display:block}.contribution-form>div strong{margin-top:3px;color:#86bd8c;font:700 13px Cinzel}.contributor-card ol{margin:0;padding:0;display:grid;gap:5px;list-style:none}.contributor-card li{padding:9px;display:grid;grid-template-columns:25px minmax(0,1fr) auto;align-items:center;gap:8px;border:1px solid #ffffff0d;background:#07080b}.contributor-card li>b{color:#9a7941;font-size:8px}.contributor-card li strong,.contributor-card li small{display:block}.contributor-card li strong{font:600 10px Cinzel}.contributor-card li small{margin-top:2px;color:#5e6167;font-size:7px}.contributor-card li>span{color:#83b889;font-size:8px;font-weight:800}.clan-empty.compact{padding:15px;margin:0}
-.raid-card{border-color:#9f504d66;background:radial-gradient(circle at 100% 0,#a84f451f,transparent 40%),linear-gradient(145deg,#191112,#0b0c10)}.raid-card.defeated{border-color:#66966c66;background:radial-gradient(circle at 100% 0,#5995651c,transparent 40%),linear-gradient(145deg,#111713,#0b0c10)}.raid-heading{align-items:center!important}.raid-heading>div>p{margin:3px 0 0;color:#9e5e58;font:700 9px Cinzel}.raid-heading>b{font-size:47px;filter:drop-shadow(0 0 15px #b85c4d77)}.raid-description{margin:0 0 13px!important;color:#8d8585!important;font-size:10px!important}.raid-health{padding:13px;border:1px solid #a9564c40;background:#07080b}.raid-health>div:first-child{display:flex;justify-content:space-between;gap:10px}.raid-health span,.raid-facts span{color:#a9655d;font-size:7px;font-weight:800;letter-spacing:.12em}.raid-health strong{color:#e0aaa3;font-size:10px}.raid-health .meter{height:11px;margin-top:8px}.raid-health .meter i{background:linear-gradient(90deg,#8d2924,#db695c);box-shadow:0 0 11px #b74439}.raid-card.defeated .raid-health .meter i{background:linear-gradient(90deg,#3f754b,#7dba86);box-shadow:0 0 11px #5f9969}.raid-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:8px 0}.raid-facts>div{padding:10px;border:1px solid #ffffff0e;background:#07080b}.raid-facts span,.raid-facts strong{display:block}.raid-facts strong{margin-top:4px;color:#b9b2ad;font-size:9px}.raid-fight{width:100%;min-height:44px;border-color:#b95b4f!important;color:#f4d1ca!important;background:linear-gradient(#ad594e,#71322e)!important}.raid-card.defeated .raid-fight{border-color:#578363!important;color:#91c79a!important;background:#4d79561c!important}.raid-safety{display:block;margin:8px 0 15px;color:#67696e;font-size:8px;line-height:1.5}.raid-chart{border-top:1px solid #ffffff10;padding-top:13px}.raid-chart>header{display:flex;justify-content:space-between;align-items:end}.raid-chart h3{margin:3px 0 0;font:700 15px Cinzel}.raid-chart>header>strong{color:#ca7770;font-size:9px}.raid-chart ol{margin:9px 0 0;padding:0;display:grid;gap:5px;list-style:none}.raid-chart li{display:grid;grid-template-columns:24px minmax(0,1fr) auto;align-items:center;gap:8px}.raid-chart li>b{color:#87645f;font-size:7px}.raid-chart li>div{position:relative;min-width:0;padding:7px 8px;overflow:hidden;background:#07080b}.raid-chart li>div>span{position:absolute;inset:0 auto 0 0;max-width:100%;background:#a54f4615}.raid-chart li>div>div{position:relative;z-index:1}.raid-chart li>div strong,.raid-chart li>div small{display:block}.raid-chart li>div strong{font:600 9px Cinzel}.raid-chart li>div small{margin-top:2px;color:#5f6166;font-size:7px}.raid-chart li>strong{color:#d08a80;font-size:9px}
+.raid-card{border-color:#9f504d66;background:radial-gradient(circle at 100% 0,#a84f451f,transparent 40%),linear-gradient(145deg,#191112,#0b0c10)}.raid-card.defeated{border-color:#66966c66;background:radial-gradient(circle at 100% 0,#5995651c,transparent 40%),linear-gradient(145deg,#111713,#0b0c10)}.raid-heading{align-items:center!important}.raid-heading>div>p{margin:3px 0 0;color:#9e5e58;font:700 9px Cinzel}.raid-heading>b{font-size:47px;filter:drop-shadow(0 0 15px #b85c4d77)}.raid-description{margin:0 0 13px!important;color:#8d8585!important;font-size:10px!important}.raid-arena{display:grid;grid-template-columns:minmax(0,1fr) 34px minmax(0,1fr);align-items:stretch}.raid-combatant{position:relative;min-width:0;padding:13px;border:1px solid #ffffff12;background:#07080b;transition:border-color .15s,filter .15s}.raid-combatant.struck{border-color:#d2665966;filter:brightness(1.2)}.raid-combatant>header{display:flex;align-items:center;gap:9px}.raid-combatant>header>b{width:38px;height:38px;display:grid;place-items:center;border:1px solid #b37f3a44;border-radius:50%;font-size:20px}.raid-combatant>header>div{min-width:0;flex:1}.raid-combatant>header span,.raid-combatant>header strong{display:block}.raid-combatant>header span,.raid-combat-health span{color:#8e6b3c;font-size:6px;font-weight:800;letter-spacing:.12em}.raid-combatant>header strong{margin-top:3px;overflow:hidden;color:#ddd2c0;font:700 11px Cinzel;text-overflow:ellipsis;white-space:nowrap}.raid-enemy{text-align:right}.raid-enemy>header>b{border-color:#a651494d}.raid-combat-health{margin:12px 0 5px;display:flex;justify-content:space-between;gap:8px}.raid-combat-health strong{color:#b9b3aa;font-size:8px}.raid-combatant .meter{height:10px}.raid-hero .meter i{background:linear-gradient(90deg,#346d80,#65b6cd);box-shadow:0 0 9px #4c9eb7}.raid-enemy .meter i{margin-left:auto;background:linear-gradient(90deg,#8d2924,#db695c);box-shadow:0 0 9px #b74439}.raid-combatant>footer{margin-top:8px;display:flex;flex-wrap:wrap;justify-content:space-between;gap:5px;color:#62656a;font-size:6px}.raid-combatant>footer strong{width:100%;color:#8f7051;font-size:7px}.raid-enemy>footer strong{text-align:right}.raid-combatant>em{position:absolute;top:46%;right:12px;color:#ef7669;font:800 17px Cinzel;animation:raid-damage .4s ease-out}.raid-enemy>em{right:auto;left:12px}.raid-versus{z-index:1;align-self:center;width:42px;height:42px;margin-left:-4px;display:grid;place-items:center;border:1px solid #ffffff17;border-radius:50%;color:#777;background:#0a0b0f;font:700 8px Cinzel}.raid-arena.fighting .raid-combatant>header>b{animation:raid-pulse 1.2s infinite}.raid-outcome{margin:7px 0!important;padding:8px;border:1px solid #a9564c44;color:#d28076!important;background:#a9564c0b;text-align:center;font-size:8px!important}.raid-outcome.victory{border-color:#5f966a55;color:#88c491!important;background:#5f966a0b}@keyframes raid-damage{from{transform:translateY(8px);opacity:0}to{transform:translateY(-8px);opacity:1}}@keyframes raid-pulse{50%{filter:brightness(1.35)}}.raid-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:8px 0}.raid-facts>div{padding:10px;border:1px solid #ffffff0e;background:#07080b}.raid-facts span,.raid-facts strong{display:block}.raid-facts span{color:#a9655d;font-size:7px;font-weight:800;letter-spacing:.12em}.raid-facts strong{margin-top:4px;color:#b9b2ad;font-size:9px}.raid-fight{width:100%;min-height:44px;border-color:#b95b4f!important;color:#f4d1ca!important;background:linear-gradient(#ad594e,#71322e)!important}.raid-card.defeated .raid-fight{border-color:#578363!important;color:#91c79a!important;background:#4d79561c!important}.raid-safety{display:block;margin:8px 0 15px;color:#67696e;font-size:8px;line-height:1.5}.raid-chart{border-top:1px solid #ffffff10;padding-top:13px}.raid-chart>header{display:flex;justify-content:space-between;align-items:end}.raid-chart h3{margin:3px 0 0;font:700 15px Cinzel}.raid-chart>header>strong{color:#ca7770;font-size:9px}.raid-chart ol{margin:9px 0 0;padding:0;display:grid;gap:5px;list-style:none}.raid-chart li{display:grid;grid-template-columns:24px minmax(0,1fr) auto;align-items:center;gap:8px}.raid-chart li>b{color:#87645f;font-size:7px}.raid-chart li>div{position:relative;min-width:0;padding:7px 8px;overflow:hidden;background:#07080b}.raid-chart li>div>span{position:absolute;inset:0 auto 0 0;max-width:100%;background:#a54f4615}.raid-chart li>div>div{position:relative;z-index:1}.raid-chart li>div strong,.raid-chart li>div small{display:block}.raid-chart li>div strong{font:600 9px Cinzel}.raid-chart li>div small{margin-top:2px;color:#5f6166;font-size:7px}.raid-chart li>strong{color:#d08a80;font-size:9px}
 @media(max-width:850px){.clan-dashboard,.clan-discovery{grid-template-columns:1fr}.clan-side{grid-template-columns:1fr 1fr}}
 @media(max-width:620px){.clan-page{padding:20px 10px 100px}.clan-heading{align-items:start;flex-direction:column}.clan-refresh{width:100%;margin-bottom:14px}.clan-invitations{padding:10px}.clan-invitations article{grid-template-columns:30px 1fr}.invitation-actions{grid-column:2;width:100%}.invitation-actions button{flex:1}.clan-banner{grid-template-columns:50px 1fr;padding:15px;gap:12px}.clan-banner>b{width:48px;height:48px;font-size:27px}.clan-banner h2{font-size:25px}.clan-banner aside{grid-column:1/-1;display:flex;align-items:center;gap:7px;text-align:left}.clan-banner aside>strong{font-size:21px}.clan-banner aside>small{margin:0 0 0 auto}.clan-side{grid-template-columns:1fr}.clan-card{padding:15px}.clan-form fieldset{grid-template-columns:1fr}.clan-form.compact{grid-template-columns:1fr}.public-clans article{grid-template-columns:30px 1fr}.public-clans article>button{grid-column:2;width:100%}.clan-members article{grid-template-columns:7px 1fr}.clan-members article>span{grid-column:2}}
 @media(max-width:620px){.daily-material{grid-template-columns:38px 1fr}.daily-material>aside{grid-column:2;text-align:left}.contribution-form{grid-template-columns:90px 1fr}.contribution-form>button{grid-column:1/-1}.clan-level-progress>div:first-child{align-items:start;flex-direction:column}}
-@media(max-width:620px){.raid-heading>b{font-size:38px}.raid-facts{grid-template-columns:1fr}.raid-health>div:first-child{align-items:start;flex-direction:column}.raid-chart>header{align-items:start;flex-direction:column;gap:5px}}
+@media(max-width:620px){.raid-heading>b{font-size:38px}.raid-arena{grid-template-columns:1fr;gap:6px}.raid-versus{display:none}.raid-enemy{text-align:left}.raid-enemy>header{flex-direction:row-reverse}.raid-enemy .meter i{margin-left:0}.raid-enemy>footer strong{text-align:left}.raid-facts{grid-template-columns:1fr}.raid-chart>header{align-items:start;flex-direction:column;gap:5px}}
 </style>

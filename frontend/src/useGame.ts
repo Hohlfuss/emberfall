@@ -81,9 +81,15 @@ export type ClanRaid = {
   startsAt: string; endsAt: string; defeatedAt: string | null; defeated: boolean; attemptAvailable: boolean; attemptedToday: boolean; nextAttemptAt: number | null
   rewards: { gold: number; xp: number; clanXp: number }; contributors: ClanRaidContributor[]
 }
+export type ClanRaidCombatEvent = { at: number; actor: 'player' | 'boss'; damage: number; playerHealth: number; bossHealth: number }
+export type ClanRaidCombat = {
+  player: { name: string; maxHealth: number; attack: number; defense: number; attackSpeed: number }
+  boss: { name: string; icon: string; maxHealth: number; startHealth: number; attack: number; defense: number; attackSpeed: number }
+  finalBossHealth: number; finalPlayerHealth: number; survived: boolean; duration: number; timeline: ClanRaidCombatEvent[]
+}
 export type ClanDetails = ClanSummary & { role: 'owner' | 'member'; online: number; members: ClanMember[]; dailyRequest: ClanDailyRequest; dailyContributionValue: number; dailyContributionItems: number; topContributors: ClanContributor[]; raid: ClanRaid }
 export type ClanInvitation = { id: string; clanId: string; clanName: string; clanVisibility: ClanVisibility; invitedByUsername: string; invitedByName: string; createdAt: string }
-type ClanSnapshot = { clan: ClanDetails | null; invitations: ClanInvitation[]; publicClans: ClanSummary[]; state?: ServerState; notice?: string }
+type ClanSnapshot = { clan: ClanDetails | null; invitations: ClanInvitation[]; publicClans: ClanSummary[]; state?: ServerState; notice?: string; combat?: ClanRaidCombat }
 type ClanChatSnapshot = { clan: { id: string; name: string } | null; messages: ChatMessage[]; online: number }
 export type AuctionListing = { id: string; seller_username: string; seller_name: string; item_name: string; quantity: number; price: number; created_at: string }
 export type DetectorReward = { kind: 'empty' | 'gold' | 'material' | 'rare' | 'gear'; label: string; detail: string; icon: string }
@@ -173,6 +179,7 @@ export function useGame() {
   const clanChatError = ref('')
   const clanNotice = ref('')
   const clanActionRunning = ref(false)
+  const clanRaidCombat = ref<ClanRaidCombat | null>(null)
   const giftError = ref('')
   const giftNotice = ref('')
   const giftRunning = ref(false)
@@ -687,7 +694,27 @@ export function useGame() {
   const leaveClan = () => clanRequest('/api/clans/current', 'DELETE', 'You left the clan.')
   const disbandClan = () => clanRequest('/api/clans/current/disband', 'DELETE', 'The clan was disbanded.')
   const contributeToClan = (item: string, quantity: number) => clanRequest('/api/clans/contribute', 'POST', `Contributed ${quantity} × ${item}.`, { item, quantity })
-  const fightClanRaid = () => clanRequest('/api/clans/raid/attempt', 'POST', 'Clan raid attempt complete.')
+  async function fightClanRaid() {
+    if (!authToken.value || clanActionRunning.value) return false
+    clanActionRunning.value = true
+    clanError.value = ''
+    clanNotice.value = ''
+    try {
+      const result = await readJson<ClanSnapshot>(await fetch(apiUrl('/api/clans/raid/attempt'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken.value}` },
+      }))
+      applyClanSnapshot(result)
+      clanRaidCombat.value = result.combat || null
+      clanNotice.value = result.notice || 'Clan raid attempt complete.'
+      return true
+    } catch (error) {
+      clanError.value = error instanceof Error ? error.message : 'The raid attempt failed.'
+      return false
+    } finally {
+      clanActionRunning.value = false
+    }
+  }
 
   async function sendGift(recipient: string, item: string, quantity: number) {
     if (!authToken.value || giftRunning.value) return false
@@ -975,7 +1002,7 @@ export function useGame() {
     workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId, craftingProfession, craftingStats, cookingId, cookingProfession, cookingStats, factionDefinitions, alliedFaction, factions, dailyObjectives, dailyResetAt, metalDetector,
     craftingRecipes, cookingRecipeList, battleFoods, foodHealingValues, foodHotValues, recipeLevels, storeListings, materialGroups, toasts,
     leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
-    chatMessages, chatOnline, chatError, clan, clanInvitations, publicClans, clanMessages, clanOnline, clanError, clanChatError, clanNotice, clanActionRunning, giftError, giftNotice, giftRunning,
+    chatMessages, chatOnline, chatError, clan, clanInvitations, publicClans, clanMessages, clanOnline, clanError, clanChatError, clanNotice, clanActionRunning, clanRaidCombat, giftError, giftNotice, giftRunning,
     auctionListings, auctionError, offlineProgress,
     professionStats, professionXpNeeded, isUnlocked, effectiveDuration, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip,
     submitAuth, switchAuthMode, loginWithGoogle, submitDisplayName, startBattle, setEncounterMode, changeEnemyTier, gather, craft, cook, eatFood, selectFood, toggleAutoEat, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadClans, createClan, joinClan, inviteClanMember, acceptClanInvitation, declineClanInvitation, leaveClan, disbandClan, contributeToClan, fightClanRaid, sendGift, loadAuction, createAuction, buyAuction, cancelAuction,

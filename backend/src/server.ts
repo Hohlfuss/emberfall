@@ -2768,12 +2768,14 @@ app.post('/api/clans/raid/attempt', async (request, response) => {
     if (!clanResult.data) return response.status(404).json({ error: 'Clan not found.' })
 
     const raid = await ensureWeeklyClanRaid(clanResult.data as ClanRow)
-    const attempt = simulateRaidAttempt(combatStats(game), {
+    const playerRaidStats = combatStats(game)
+    const raidEnemyStats = {
       currentHealth: Number(raid.current_health),
       attack: Number(raid.attack),
       defense: Number(raid.defense),
       attackSpeed: Number(raid.attack_speed),
-    })
+    }
+    const attempt = simulateRaidAttempt(playerRaidStats, raidEnemyStats)
     const attemptDate = utcDate()
     const rpc = await supabase.rpc('record_clan_raid_attempt', {
       attempt_id: randomUUID(),
@@ -2794,7 +2796,12 @@ app.post('/api/clans/raid/attempt', async (request, response) => {
 
     const outcome = Array.isArray(rpc.data) ? rpc.data[0] : rpc.data
     const appliedDamage = Number(outcome?.applied_damage || 0)
+    const remainingHealth = Number(outcome?.remaining_health || 0)
     const defeated = Boolean(outcome?.raid_defeated)
+    const replay = simulateRaidAttempt(playerRaidStats, {
+      ...raidEnemyStats,
+      currentHealth: remainingHealth + appliedDamage,
+    })
     game.message = defeated
       ? `${raid.boss_name} was defeated! Your clan earned ${Number(outcome?.awarded_clan_xp || 0).toLocaleString()} clan XP.`
       : `You dealt ${appliedDamage.toLocaleString()} damage to ${raid.boss_name}. Your normal health and gold were not affected.`
@@ -2809,6 +2816,29 @@ app.post('/api/clans/raid/attempt', async (request, response) => {
       ...(await clanSnapshot(session.username)),
       state: publicState(game),
       notice,
+      combat: {
+        player: {
+          name: game.name,
+          maxHealth: playerRaidStats.maxHealth,
+          attack: playerRaidStats.attack,
+          defense: playerRaidStats.defense,
+          attackSpeed: playerRaidStats.attackSpeed,
+        },
+        boss: {
+          name: raid.boss_name,
+          icon: raid.boss_icon,
+          maxHealth: Number(raid.max_health),
+          startHealth: remainingHealth + appliedDamage,
+          attack: Number(raid.attack),
+          defense: Number(raid.defense),
+          attackSpeed: Number(raid.attack_speed),
+        },
+        finalBossHealth: remainingHealth,
+        finalPlayerHealth: replay.playerHealth,
+        survived: replay.survived,
+        duration: replay.duration,
+        timeline: replay.timeline,
+      },
     })
   } catch (error) {
     return clanServerError(response, error, 'Could not complete the clan raid attempt.')

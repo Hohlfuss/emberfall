@@ -20,6 +20,14 @@ export type RaidEnemyStats = {
   attackSpeed: number
 }
 
+export type RaidCombatEvent = {
+  at: number
+  actor: 'player' | 'boss'
+  damage: number
+  playerHealth: number
+  bossHealth: number
+}
+
 export const raidBossDefinitions: RaidBossDefinition[] = [
   { id: 'cinderTitan', name: 'Cinder Titan', title: 'The Walking Furnace', icon: '🔥', description: 'An ancient siege beast whose iron heart burns without fuel.' },
   { id: 'frostHydra', name: 'Frostbound Hydra', title: 'The Sevenfold Winter', icon: '🐲', description: 'Every severed thought returns as another head wreathed in ice.' },
@@ -67,14 +75,19 @@ export function simulateRaidAttempt(player: RaidCombatStats, boss: RaidEnemyStat
   const playerDamage = Math.max(1, Math.floor(player.attack) - Math.floor(boss.defense))
   const bossDamage = Math.max(1, Math.floor(boss.attack) - Math.floor(player.defense))
   const targetHealth = Math.max(1, Math.floor(boss.currentHealth))
+  const timeline: RaidCombatEvent[] = []
   let attacks = 0
 
   while (playerHealth > 0 && damage < targetHealth && attacks++ < 100_000) {
     if (nextPlayerAttack <= nextBossAttack) {
-      damage = Math.min(targetHealth, damage + playerDamage)
+      const applied = Math.min(playerDamage, targetHealth - damage)
+      damage += applied
+      timeline.push({ at: nextPlayerAttack, actor: 'player', damage: applied, playerHealth: Math.max(0, playerHealth), bossHealth: Math.max(0, targetHealth - damage) })
       nextPlayerAttack += Math.max(1, Math.floor(player.attackSpeed))
     } else {
-      playerHealth -= bossDamage
+      const applied = Math.min(bossDamage, playerHealth)
+      playerHealth -= applied
+      timeline.push({ at: nextBossAttack, actor: 'boss', damage: applied, playerHealth: Math.max(0, playerHealth), bossHealth: Math.max(0, targetHealth - damage) })
       nextBossAttack += Math.max(1, Math.floor(boss.attackSpeed))
     }
   }
@@ -84,5 +97,7 @@ export function simulateRaidAttempt(player: RaidCombatStats, boss: RaidEnemyStat
     survived: damage >= targetHealth,
     playerHealth: Math.max(0, playerHealth),
     attacks: Math.max(0, attacks - 1),
+    duration: timeline.at(-1)?.at || 0,
+    timeline,
   }
 }
