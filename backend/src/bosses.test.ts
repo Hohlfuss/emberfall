@@ -1,35 +1,33 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { bossDefinitions } from '../../frontend/src/gameData.ts'
+import { bossDefinitions, startingPages, tierFiveUnlockPages } from '../../frontend/src/gameData.ts'
 
 test('the area path has ten unique, progressively harder bosses', () => {
   assert.equal(bossDefinitions.length, 10)
   assert.equal(new Set(bossDefinitions.map(boss => boss.id)).size, 10)
   assert.equal(new Set(bossDefinitions.map(boss => boss.name)).size, 10)
+  assert.deepEqual(bossDefinitions.map(boss => boss.tier), [10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
 
   let previousTier = 0
   for (const boss of bossDefinitions) {
     assert.ok(boss.tier > previousTier, `${boss.name} should have a higher tier than the previous boss`)
-    assert.ok(boss.healthMultiplier > 0)
-    assert.ok(boss.attackMultiplier > 0)
-    assert.ok(boss.intervalMultiplier > 0)
+    assert.equal(boss.healthMultiplier, 1, `${boss.name} should use its normal-enemy power-tier health`)
+    assert.equal(boss.attackMultiplier, 1, `${boss.name} should use its normal-enemy power-tier attack`)
+    assert.equal(boss.defenseBonus, 0, `${boss.name} should use its normal-enemy power-tier defense`)
+    assert.equal(boss.intervalMultiplier, 1, `${boss.name} should use its normal-enemy power-tier attack interval`)
     assert.ok(boss.rewardMultiplier > 0)
     previousTier = boss.tier
   }
 })
 
-test('every boss opens one distinct area in the intended order', () => {
-  assert.deepEqual(bossDefinitions.map(boss => boss.unlockPage), [
-    'woodcutting',
-    'mining',
-    'crafting',
-    'fishing',
-    'farming',
-    'cooking',
-    'workers',
-    'metal detector',
-    'factions',
-    'auction',
+test('only metal detector and factions are currently boss-gated', () => {
+  assert.deepEqual(bossDefinitions.filter(boss => boss.unlockPage).map(boss => [boss.unlockPage, boss.unlockName]), [
+    ['metal detector', 'Metal Detector'],
+    ['factions', 'Factions'],
   ])
-  assert.equal(new Set(bossDefinitions.map(boss => boss.unlockPage)).size, bossDefinitions.length)
+})
+
+test('starting areas and the Tier 5 frontier match the progression design', () => {
+  assert.deepEqual(startingPages, ['battle', 'fishing', 'farming', 'cooking', 'workers', 'inventory', 'achievements', 'auction', 'high scores', 'shop'])
+  assert.deepEqual(tierFiveUnlockPages, ['woodcutting', 'mining', 'crafting'])
 })

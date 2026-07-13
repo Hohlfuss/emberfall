@@ -8,36 +8,36 @@ const steps = [
   {
     icon: '⚔', eyebrow: 'STEP 1 · BATTLE', title: 'Begin in the arena',
     body: 'Fight normal enemies to earn player XP and gold. Victories unlock higher enemy tiers, while defeat starts recovery and removes 10% of your current gold.',
+    tip: 'Your first Tier 5 victory opens Woodcutting, Mining, and Crafting together.',
+  },
+  {
+    icon: '🎣', eyebrow: 'STEP 2 · STARTING SKILLS', title: 'Gather food immediately',
+    body: 'Fishing, Farming, and Cooking are available from the beginning. Catch fish, harvest crops, and combine them into tiered healing food.',
     tip: 'Your health, selected food, and Eat button stay together on your hero card during battle.',
   },
   {
-    icon: '♛', eyebrow: 'STEP 2 · AREA BOSSES', title: 'Open the realm',
-    body: 'Use the Area Boss selector beside enemy tiers to challenge ten named bosses. Each first victory opens a new profession or part of Emberfall.',
-    tip: 'Bramblemaw opens Woodcutting first. The navigation menu always shows the next boss and its unlock.',
+    icon: '🪓', eyebrow: 'STEP 3 · TIER 5 FRONTIER', title: 'Open the workshop path',
+    body: 'Defeat a Tier 5 normal enemy once to unlock Woodcutting, Mining, and Crafting. These three areas stay hidden until that victory.',
+    tip: 'Wood and ore feed the forge, so all three areas open at the same milestone.',
   },
   {
-    icon: '🪓', eyebrow: 'STEP 3 · PROFESSIONS', title: 'Grow one area at a time',
-    body: 'Woodcutting, Mining, Fishing, and Farming each have profession levels and XP. Their activities and resources use tiers, with stronger tiers requiring higher profession levels.',
-    tip: 'Critical actions finish faster. Upgrade each profession’s tool for stronger gathering stats.',
-  },
-  {
-    icon: '⚒', eyebrow: 'STEP 4 · CRAFTING', title: 'Build useful equipment',
-    body: 'Defeat the Ashen Forgemaster to open Crafting. The forge turns gathered materials into components and tiered gear.',
-    tip: 'Crafting has its own level, speed bonuses, conservation, and double-output chance.',
+    icon: '♛', eyebrow: 'STEP 4 · AREA BOSSES', title: 'Prepare for true challenges',
+    body: 'Bosses are much stronger than early enemies. The first has normal-enemy Power Tier 10, the second Power Tier 20, and each following boss adds another ten tiers.',
+    tip: 'The Buried Colossus unlocks Metal Detector. The Bannerless King unlocks Factions; later boss unlocks can be added in future updates.',
   },
   {
     icon: '🍲', eyebrow: 'STEP 5 · COOKING', title: 'Prepare healing food',
-    body: 'After Cindermaw falls, Cooking pairs fish and farm crops into tiered meals. Every dish restores its listed health in and out of battle.',
+    body: 'Cooking pairs fish and farm crops into tiered meals from the beginning of the game. Every dish restores its listed health in and out of battle.',
     tip: 'Cooking levels improve recipe speed, ingredient conservation, and your chance to make a bonus dish.',
   },
   {
     icon: '♟', eyebrow: 'STEP 6 · AUTOMATION', title: 'Put Workers to work',
-    body: 'Workers become available later in the boss path. Once open, assign them to unlocked gathering activities for passive materials.',
-    tip: 'Player-level milestones still award free Workers, ready for you when the Workers area opens.',
+    body: 'Workers and the Auction House are available from the beginning. Assign Workers to any gathering activity you have opened and trade materials with other players.',
+    tip: 'Player-level milestones award free Workers, and additional Workers can be hired in the Shop.',
   },
   {
     icon: '★', eyebrow: 'READY · EMBERFALL', title: 'Choose your own path',
-    body: 'Grow strong enough for the next boss, then explore each newly opened area. On mobile, Battle, Explore, Inventory, and Menu are always at the bottom of the screen.',
+    body: 'Progress through normal enemy tiers, build your professions, and approach bosses as long-term challenges. On mobile, Battle, Explore, Inventory, and Menu stay at the bottom of the screen.',
     tip: 'Use the ? Guide button in the top bar whenever you want to see this tutorial again.',
   },
 ] as const

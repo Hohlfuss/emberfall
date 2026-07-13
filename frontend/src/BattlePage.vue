@@ -12,6 +12,7 @@ const props = defineProps<{
   defeatedBossIds: string[]
   defeatedBosses: number
   bossTotal: number
+  tierFiveAreasUnlocked: boolean
   enemyTier: number
   highestEnemyTier: number
   enemy: Enemy
@@ -58,6 +59,12 @@ function selectFood(event: Event) {
 function selectedFoodDetails() {
   return props.foods.find(food => food.item === props.selectedFood)
 }
+
+function bossProgressLabel(boss: BossDefinition) {
+  if (props.defeatedBossIds.includes(boss.id)) return boss.unlockName ? `${boss.unlockName} open` : 'Challenge cleared'
+  if (props.currentBoss?.id === boss.id) return boss.unlockName ? `Next · unlocks ${boss.unlockName}` : 'Next mastery challenge'
+  return boss.unlockName ? `Locked · ${boss.unlockName}` : 'Locked challenge'
+}
 </script>
 
 <template>
@@ -72,15 +79,15 @@ function selectedFoodDetails() {
         <div><span>ENEMY TIER</span><strong>{{ enemyTier }}</strong><small>Highest {{ highestEnemyTier }}</small></div>
         <button type="button" aria-label="Next enemy tier" :disabled="enemyTier >= highestEnemyTier" @click="emit('change-tier', 1)">+</button>
       </div>
-      <div v-else class="boss-objective"><span>{{ defeatedBosses >= bossTotal ? 'AREA PATH COMPLETE' : 'NEXT AREA UNLOCK' }}</span><strong>{{ defeatedBosses >= bossTotal ? 'All areas open' : currentBoss?.unlockName }}</strong><small>{{ defeatedBosses }} / {{ bossTotal }} bosses defeated</small></div>
+      <div v-else class="boss-objective"><span>{{ defeatedBosses >= bossTotal ? 'BOSS PATH COMPLETE' : currentBoss?.unlockName ? 'NEXT BOSS UNLOCK' : 'MASTERY CHALLENGE' }}</span><strong>{{ defeatedBosses >= bossTotal ? 'All bosses defeated' : currentBoss?.unlockName || 'Future unlock coming later' }}</strong><small>{{ defeatedBosses }} / {{ bossTotal }} bosses defeated</small></div>
     </header>
 
     <div v-if="encounterMode === 'boss' && currentBoss" class="boss-brief">
-      <b>{{ currentBoss.icon }}</b><div><span>AREA BOSS · TIER {{ currentBoss.tier }}</span><strong>{{ currentBoss.name }} · {{ currentBoss.title }}</strong><p>{{ currentBoss.description }}</p></div><aside>{{ defeatedBosses >= bossTotal ? 'FINAL BOSS' : 'UNLOCKS' }}<strong>{{ defeatedBosses >= bossTotal ? 'Rematch' : currentBoss.unlockName }}</strong></aside>
+      <b>{{ currentBoss.icon }}</b><div><span>AREA BOSS · POWER TIER {{ currentBoss.tier }}</span><strong>{{ currentBoss.name }} · {{ currentBoss.title }}</strong><p>{{ currentBoss.description }}</p></div><aside>{{ defeatedBosses >= bossTotal ? 'FINAL BOSS' : currentBoss.unlockName ? 'UNLOCKS' : 'CURRENT REWARD' }}<strong>{{ defeatedBosses >= bossTotal ? 'Rematch' : currentBoss.unlockName || 'XP & gold' }}</strong></aside>
     </div>
     <details v-if="encounterMode === 'boss'" class="boss-path">
       <summary>VIEW ALL 10 AREA BOSSES <span>{{ defeatedBosses }} / {{ bossTotal }} DEFEATED</span></summary>
-      <div><article v-for="boss in bosses" :key="boss.id" :class="{ defeated: defeatedBossIds.includes(boss.id), current: currentBoss?.id === boss.id && defeatedBosses < bossTotal, locked: !defeatedBossIds.includes(boss.id) && currentBoss?.id !== boss.id }"><b>{{ boss.icon }}</b><span>TIER {{ boss.tier }}</span><strong>{{ boss.name }}</strong><small>{{ defeatedBossIds.includes(boss.id) ? `${boss.unlockName} open` : currentBoss?.id === boss.id ? `Next · unlocks ${boss.unlockName}` : `Locked · ${boss.unlockName}` }}</small></article></div>
+      <div><article v-for="boss in bosses" :key="boss.id" :class="{ defeated: defeatedBossIds.includes(boss.id), current: currentBoss?.id === boss.id && defeatedBosses < bossTotal, locked: !defeatedBossIds.includes(boss.id) && currentBoss?.id !== boss.id }"><b>{{ boss.icon }}</b><span>POWER TIER {{ boss.tier }}</span><strong>{{ boss.name }}</strong><small>{{ bossProgressLabel(boss) }}</small></article></div>
     </details>
 
     <div class="combatants">
@@ -118,8 +125,8 @@ function selectedFoodDetails() {
 
     <footer class="battle-action">
       <div><button type="button" class="primary" :disabled="recovering || enemyLoading" @click="emit('start')">{{ battleButtonLabel }}</button><button v-if="encounterMode === 'normal' && autoBattleUnlocked" type="button" class="inline-auto-battle" :class="{ enabled: autoBattle }" :disabled="recovering" @click="emit('toggle-auto-battle', !autoBattle)"><span>AUTO-BATTLE</span><b>{{ autoBattle ? 'ON' : 'OFF' }}</b></button></div>
-      <small v-if="encounterMode === 'normal'">Win to unlock the next enemy tier. Area unlocks come from bosses.</small>
-      <small v-else>{{ defeatedBosses >= bossTotal ? 'All areas are open. Rematch the final boss for its XP and gold reward.' : `Boss fights are manual challenges. Defeat this boss to open ${currentBoss?.unlockName}.` }}</small>
+      <small v-if="encounterMode === 'normal'">{{ tierFiveAreasUnlocked ? 'Win to unlock the next enemy tier.' : 'Your first Tier 5 victory unlocks Woodcutting, Mining, and Crafting.' }}</small>
+      <small v-else>{{ defeatedBosses >= bossTotal ? 'All current bosses are defeated. Rematch the final boss for its XP and gold reward.' : currentBoss?.unlockName ? `Defeat this boss to open ${currentBoss.unlockName}.` : 'This mastery boss currently rewards XP and gold; more boss unlocks can be added later.' }}</small>
     </footer>
   </section>
 </template>

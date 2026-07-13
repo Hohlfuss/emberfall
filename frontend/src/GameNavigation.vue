@@ -81,10 +81,10 @@ function select(page: Page) {
           </div>
           <footer v-if="nextBoss">
             <b>{{ nextBoss.icon }}</b>
-            <div><span>NEXT AREA · {{ defeatedBosses }} / {{ bossTotal }} BOSSES DEFEATED</span><strong>{{ nextBoss.name }} unlocks {{ nextBoss.unlockName }}</strong></div>
+            <div><span>NEXT BOSS · {{ defeatedBosses }} / {{ bossTotal }} DEFEATED</span><strong>{{ nextBoss.name }} · Power Tier {{ nextBoss.tier }}<template v-if="nextBoss.unlockName"> · unlocks {{ nextBoss.unlockName }}</template></strong></div>
             <button type="button" @click="select('battle')">FIGHT</button>
           </footer>
-          <footer v-else class="all-areas-open"><b>★</b><div><span>ALL AREA BOSSES DEFEATED</span><strong>The whole realm is open</strong></div></footer>
+          <footer v-else class="all-areas-open"><b>★</b><div><span>ALL CURRENT BOSSES DEFEATED</span><strong>The boss path is complete</strong></div></footer>
         </section>
       </div>
     </Transition>

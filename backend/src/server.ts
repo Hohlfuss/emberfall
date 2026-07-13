@@ -7,7 +7,7 @@ import { OAuth2Client } from 'google-auth-library'
 
 loadEnv({ path: fileURLToPath(new URL('../.env', import.meta.url)) })
 import {
-  allResources, bossDefinitions, cookingRecipes, farmingPlots, fishingSpots, GAME_PACE_MULTIPLIER, gearCatalog, rareMaterials, recipes as recipeData, rocks, slotLabels, woods,
+  allResources, bossDefinitions, cookingRecipes, farmingPlots, fishingSpots, GAME_PACE_MULTIPLIER, gearCatalog, rareMaterials, recipes as recipeData, rocks, slotLabels, startingPages, tierFiveUnlockPages, woods,
   type Bonuses, type BossDefinition, type GearSlot, type Page, type ProfessionStats, type Recipe, type Resource, type Skill,
 } from '../../frontend/src/gameData.ts'
 import { rollGatherYield } from './gathering.ts'
@@ -145,6 +145,7 @@ type Game = {
   highestEnemyTier: number
   encounterMode: EncounterMode
   defeatedBosses: string[]
+  tierFiveAreasUnlocked: boolean
   enemy: Enemy
   battleActive: boolean
   autoBattle: boolean
@@ -327,7 +328,6 @@ const enemyArchetypes = [
   { name: 'Guarded', health: 1.05, attack: .95, defense: 2, interval: 1.08, reward: 1.15 },
 ]
 const enemyNames = ['Moss Rat', 'Cave Slime', 'Feral Imp', 'Dust Goblin', 'Wild Wolf', 'Stone Drake', 'Void Wraith']
-const corePages: Page[] = ['battle', 'inventory', 'achievements', 'high scores', 'shop']
 const games = new Map<string, Game>()
 
 const tokens = new Map<
@@ -386,7 +386,7 @@ function normalizeMetalDetector(value: Partial<MetalDetector> | undefined, now: 
   const fallback = createMetalDetector(now, unlocked)
   const storedTiles = Array.isArray(value?.tiles) ? value.tiles : []
   return {
-    unlocked: value?.unlocked ?? unlocked,
+    unlocked: unlocked || Boolean(value?.unlocked),
     charges: Math.min(DETECTOR_MAX_CHARGES, Math.max(0, Math.floor(value?.charges ?? fallback.charges))),
     chargeUpdatedAt: Number.isFinite(value?.chargeUpdatedAt) ? Number(value?.chargeUpdatedAt) : now,
     depth: Math.max(0, Math.floor(value?.depth ?? 0)),
@@ -411,13 +411,9 @@ function normalizeLegacyTerminology(text: string) {
 function normalizedBossProgress(value: unknown): string[] {
   // Saves created before boss progression had every area available, so preserve that access.
   if (!Array.isArray(value)) return bossDefinitions.map(boss => boss.id)
-  const stored = new Set(value.filter((id): id is string => typeof id === 'string'))
-  const sequential: string[] = []
-  for (const boss of bossDefinitions) {
-    if (!stored.has(boss.id)) break
-    sequential.push(boss.id)
-  }
-  return sequential
+  const validBossIds = new Set(bossDefinitions.map(boss => boss.id))
+  const completedCount = new Set(value.filter((id): id is string => typeof id === 'string' && validBossIds.has(id))).size
+  return bossDefinitions.slice(0, completedCount).map(boss => boss.id)
 }
 
 function currentBoss(game: Game): BossDefinition {
@@ -426,8 +422,11 @@ function currentBoss(game: Game): BossDefinition {
 
 function unlockedPages(game: Game): Page[] {
   return [...new Set([
-    ...corePages,
-    ...bossDefinitions.filter(boss => game.defeatedBosses.includes(boss.id)).map(boss => boss.unlockPage),
+    ...startingPages,
+    ...(game.tierFiveAreasUnlocked ? tierFiveUnlockPages : []),
+    ...bossDefinitions
+      .filter(boss => boss.unlockPage && game.defeatedBosses.includes(boss.id))
+      .map(boss => boss.unlockPage as Page),
   ])]
 }
 
@@ -437,6 +436,7 @@ function areaUnlocked(game: Game, page: Page) {
 
 function requireArea(game: Game, page: Page) {
   if (areaUnlocked(game, page)) return
+  if (tierFiveUnlockPages.includes(page)) reject('Defeat a Tier 5 normal enemy to unlock Woodcutting, Mining, and Crafting.')
   const boss = bossDefinitions.find(candidate => candidate.unlockPage === page)
   reject(boss ? `Defeat ${boss.name} to unlock ${boss.unlockName}.` : 'That area is still locked.')
 }
@@ -452,6 +452,9 @@ function deserializeGame(value: unknown): Game {
     achievement.id === stored.titleAchievementId && achievement.titleReward && storedAchievementIds.includes(achievement.id),
   )
   const defeatedBosses = normalizedBossProgress(stored.defeatedBosses)
+  const legacyTierFiveUnlock = !Array.isArray(stored.defeatedBosses)
+    || (stored.highestEnemyTier ?? 1) >= 6
+    || ['bramblemaw', 'ironhideGolem', 'ashenForgemaster'].some(id => stored.defeatedBosses.includes(id))
 
   return {
     ...stored,
@@ -477,6 +480,7 @@ function deserializeGame(value: unknown): Game {
     autoBattle: stored.autoBattle ?? false,
     encounterMode: stored.encounterMode === 'boss' ? 'boss' : 'normal',
     defeatedBosses,
+    tierFiveAreasUnlocked: stored.tierFiveAreasUnlocked ?? legacyTierFiveUnlock,
     ownedGear: [...new Set([...(stored.ownedGear ?? []), 'wornFishingRod', 'wornFarmingHoe'])],
     unlockedGear: [...new Set([...(stored.unlockedGear ?? stored.ownedGear ?? []), 'wornFishingRod', 'wornFarmingHoe'])],
     equipment: {
@@ -1021,8 +1025,12 @@ function finishVictory(game: Game, now: number) {
         game.metalDetector.charges = DETECTOR_MAX_CHARGES
         game.metalDetector.chargeUpdatedAt = now
       }
-      pushEvent(game, 'achievement', `${boss.name} defeated!`, `${boss.unlockName} unlocked · +${rewardXp} XP · +${rewardGold} gold`)
-      chatMessages.push({ id: randomUUID(), username: 'realm', name: 'Realm Herald', message: `${game.name} defeated ${boss.name} and unlocked ${boss.unlockName}!`, createdAt: new Date().toISOString() })
+      const unlockDetail = boss.unlockName ? `${boss.unlockName} unlocked · ` : 'Boss challenge cleared · '
+      pushEvent(game, 'achievement', `${boss.name} defeated!`, `${unlockDetail}+${rewardXp} XP · +${rewardGold} gold`)
+      const heraldMessage = boss.unlockName
+        ? `${game.name} defeated ${boss.name} and unlocked ${boss.unlockName}!`
+        : `${game.name} defeated the Power Tier ${boss.tier} boss ${boss.name}!`
+      chatMessages.push({ id: randomUUID(), username: 'realm', name: 'Realm Herald', message: heraldMessage, createdAt: new Date().toISOString() })
       if (chatMessages.length > CHAT_LIMIT) chatMessages.splice(0, chatMessages.length - CHAT_LIMIT)
     }
     stopBattle(game)
@@ -1030,7 +1038,7 @@ function finishVictory(game: Game, now: number) {
     checkAchievements(game)
     const remaining = bossDefinitions.length - game.defeatedBosses.length
     const status = firstVictory
-      ? `${boss.name} defeated! ${boss.unlockName} unlocked.${remaining ? ' Preparing the next area boss...' : ' Every area is now open!'}`
+      ? `${boss.name} defeated!${boss.unlockName ? ` ${boss.unlockName} unlocked.` : ''}${remaining ? ' Preparing the next area boss...' : ' All current bosses are defeated!'}`
       : `${boss.name} defeated again! +${rewardXp} XP and +${rewardGold} gold. Preparing a rematch...`
     startEnemyLoad(game, now, status)
     return
@@ -1038,6 +1046,13 @@ function finishVictory(game: Game, now: number) {
   giveGold(game, rewardGold)
   game.lifetime.kills++
   gainFactionReputation(game, 'vanguard', Math.max(1, game.enemyTier * 2))
+  const unlockedTierFiveAreas = game.enemyTier === 5 && !game.tierFiveAreasUnlocked
+  if (unlockedTierFiveAreas) {
+    game.tierFiveAreasUnlocked = true
+    pushEvent(game, 'achievement', 'The frontier is open!', 'Woodcutting, Mining, and Crafting unlocked')
+    chatMessages.push({ id: randomUUID(), username: 'realm', name: 'Realm Herald', message: `${game.name} defeated a Tier 5 enemy and opened Woodcutting, Mining, and Crafting!`, createdAt: new Date().toISOString() })
+    if (chatMessages.length > CHAT_LIMIT) chatMessages.splice(0, chatMessages.length - CHAT_LIMIT)
+  }
   const rareDrops = ['voidfang', 'heartOfTheGrove', 'starforgedSignet']
   if (game.enemyTier >= 5 && Math.random() < .00015 + game.enemyTier * .00005) {
     const gearId = rareDrops[Math.floor(Math.random() * rareDrops.length)]!
@@ -1054,7 +1069,9 @@ function finishVictory(game: Game, now: number) {
   stopBattle(game)
   gainXp(game, rewardXp)
   checkAchievements(game)
-  startEnemyLoad(game, now, `Tier ${game.enemyTier} victory! +${rewardXp} XP and +${rewardGold} gold. Loading next enemy...`)
+  startEnemyLoad(game, now, unlockedTierFiveAreas
+    ? `Tier 5 victory! Woodcutting, Mining, and Crafting unlocked. Loading next enemy...`
+    : `Tier ${game.enemyTier} victory! +${rewardXp} XP and +${rewardGold} gold. Loading next enemy...`)
 }
 
 function beginRecovery(game: Game, now: number) {
@@ -1212,7 +1229,7 @@ function createGame(name: string): Game {
     workerAssignments: {}, workerProgress: {}, workers: 0, levelRewardWorkers: 0, shopUpgrades: { medic: 0, scouting: 0, training: 0, fortitude: 0, autoBattle: 0, autoEat: 0, healingPower: 0 }, selectedFood: null, autoEat: false, nextAutoEatAt: 0,
     unlockedAchievements: new Set(), titleAchievementId: null, alliedFaction: null, factions: { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } }, daily: createDailyState(createLifetimeStats()), metalDetector: createMetalDetector(now),
     lifetime: createLifetimeStats(),
-    enemyTier: 1, highestEnemyTier: 1, encounterMode: 'normal', defeatedBosses: [], enemy: { name: 'Loading...', archetype: '', health: 0, maxHealth: 1, attack: 0, defense: 0, attackSpeed: 0, xp: 0, gold: 0 },
+    enemyTier: 1, highestEnemyTier: 1, encounterMode: 'normal', defeatedBosses: [], tierFiveAreasUnlocked: false, enemy: { name: 'Loading...', archetype: '', health: 0, maxHealth: 1, attack: 0, defense: 0, attackSpeed: 0, xp: 0, gold: 0 },
     battleActive: false, autoBattle: false, nextPlayerAttackAt: 0, nextEnemyAttackAt: 0, recovery: null, enemyLoad: null, crafting: null, cooking: null,
     events: [], nextEventId: 1,
     progressSnapshot: { at: now, gold: 0, xp: 0, level: 1, kills: 0, gathered: 0, crafted: 0, cooked: 0, inventory: {}, ownedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe', 'wornFishingRod', 'wornFarmingHoe'] },
@@ -1374,6 +1391,7 @@ function performAction(game: Game, action: Action, now: number) {
       requireArea(game, 'workers')
       const resource = allResources.find(candidate => candidate.id === action.resourceId)
       if (!resource) reject('Unknown resource.')
+      requireArea(game, resource.skill)
       if (game.professions[resource.skill].level < resource.tier) reject('That resource is locked.')
       if (!Number.isInteger(action.change) || Math.abs(action.change) !== 1) reject('Worker change must be +1 or -1.')
       const assigned = Object.values(game.workerAssignments).reduce((sum, count) => sum + count, 0)
@@ -1582,6 +1600,7 @@ function publicState(game: Game, now = Date.now()) {
     foodHealingValues: Object.fromEntries(cookingRecipes.map(recipe => [recipe.outputItem, foodHealing(game, recipe.healing)])),
     encounterMode: game.encounterMode,
     defeatedBosses: game.defeatedBosses,
+    tierFiveAreasUnlocked: game.tierFiveAreasUnlocked,
     currentBossId: currentBoss(game).id,
     unlockedPages: unlockedPages(game),
     enemyTier: game.enemyTier, highestEnemyTier: game.highestEnemyTier, enemy: game.enemy,
@@ -2219,7 +2238,6 @@ app.post('/api/auction', async (request, response) => {
   const session = chatSession(request)
   if (!session) return response.status(401).json({ error: 'Log in to create a listing.' })
   const game = games.get(session.gameId)
-  if (game && !areaUnlocked(game, 'auction')) return response.status(403).json({ error: 'Defeat Crowned Void Drake to unlock the Auction House.' })
   const item = typeof request.body?.item === 'string' ? request.body.item : ''
   const quantity = Number(request.body?.quantity)
   const price = Number(request.body?.price)
@@ -2244,7 +2262,6 @@ app.post('/api/auction/:id/buy', async (request, response) => {
   const buyerSession = chatSession(request)
   if (!buyerSession) return response.status(401).json({ error: 'Log in to buy an auction.' })
   const buyer = games.get(buyerSession.gameId)
-  if (buyer && !areaUnlocked(buyer, 'auction')) return response.status(403).json({ error: 'Defeat Crowned Void Drake to unlock the Auction House.' })
   const { data: listing, error } = await supabase.from('auction_listings').select('*').eq('id', request.params.id).maybeSingle()
   if (error || !listing) return response.status(404).json({ error: 'That listing is no longer available.' })
   if (!buyer || listing.seller_username === buyerSession.username) return response.status(409).json({ error: 'You cannot buy your own listing.' })
@@ -2269,7 +2286,6 @@ app.delete('/api/auction/:id', async (request, response) => {
   const session = chatSession(request)
   if (!session) return response.status(401).json({ error: 'Log in to cancel a listing.' })
   const game = games.get(session.gameId)
-  if (game && !areaUnlocked(game, 'auction')) return response.status(403).json({ error: 'Defeat Crowned Void Drake to unlock the Auction House.' })
   const { data: listing } = await supabase.from('auction_listings').delete().eq('id', request.params.id).eq('seller_username', session.username).select('*').maybeSingle()
   if (!game || !listing) return response.status(404).json({ error: 'Listing not found or not owned by you.' })
   game.inventory[listing.item_name] = (game.inventory[listing.item_name] || 0) + listing.quantity

@@ -1,4 +1,6 @@
 export type Page = 'battle' | 'woodcutting' | 'mining' | 'fishing' | 'farming' | 'crafting' | 'cooking' | 'metal detector' | 'workers' | 'inventory' | 'achievements' | 'factions' | 'auction' | 'high scores' | 'shop'
+export const startingPages: Page[] = ['battle', 'fishing', 'farming', 'cooking', 'workers', 'inventory', 'achievements', 'auction', 'high scores', 'shop']
+export const tierFiveUnlockPages: Page[] = ['woodcutting', 'mining', 'crafting']
 export type Skill = 'woodcutting' | 'mining' | 'fishing' | 'farming'
 export type GearSlot = 'weapon' | 'helmet' | 'chest' | 'legs' | 'boots' | 'gloves' | 'ring' | 'amulet' | 'pickaxe' | 'hatchet' | 'fishingRod' | 'farmingHoe'
 export type ProfessionStats = { speed: number; bonusYieldPercent: number; critChance: number; critPower: number }
@@ -92,8 +94,8 @@ export type BossDefinition = {
   title: string
   icon: string
   tier: number
-  unlockPage: Page
-  unlockName: string
+  unlockPage?: Page
+  unlockName?: string
   description: string
   healthMultiplier: number
   attackMultiplier: number
@@ -103,16 +105,16 @@ export type BossDefinition = {
 }
 
 export const bossDefinitions: BossDefinition[] = [
-  { id: 'bramblemaw', name: 'Bramblemaw', title: 'Gatekeeper of the Wilds', icon: '🌳', tier: 1, unlockPage: 'woodcutting', unlockName: 'Woodcutting', description: 'An ancient beast whose defeat opens the forest paths.', healthMultiplier: 1.35, attackMultiplier: .9, defenseBonus: 0, intervalMultiplier: 1.08, rewardMultiplier: 2.5 },
-  { id: 'ironhideGolem', name: 'Ironhide Golem', title: 'Warden of the Quarry', icon: '🪨', tier: 2, unlockPage: 'mining', unlockName: 'Mining', description: 'A living wall of stone guarding Emberfall’s first mine.', healthMultiplier: 1.45, attackMultiplier: 1, defenseBonus: 1, intervalMultiplier: 1.05, rewardMultiplier: 2.7 },
-  { id: 'ashenForgemaster', name: 'Ashen Forgemaster', title: 'Keeper of the First Flame', icon: '🔥', tier: 3, unlockPage: 'crafting', unlockName: 'Crafting', description: 'The fallen smith who still commands the sealed forge.', healthMultiplier: 1.55, attackMultiplier: 1.03, defenseBonus: 2, intervalMultiplier: 1.02, rewardMultiplier: 2.9 },
-  { id: 'tideclaw', name: 'Tideclaw', title: 'Tyrant of the River Gate', icon: '🦀', tier: 4, unlockPage: 'fishing', unlockName: 'Fishing', description: 'A plated river horror blocking every safe fishing route.', healthMultiplier: 1.65, attackMultiplier: 1.06, defenseBonus: 2, intervalMultiplier: 1, rewardMultiplier: 3.1 },
-  { id: 'blightrootMatron', name: 'Blightroot Matron', title: 'The Withered Harvest', icon: '🥀', tier: 5, unlockPage: 'farming', unlockName: 'Farming', description: 'Her corruption must end before the fields can be reclaimed.', healthMultiplier: 1.72, attackMultiplier: 1.09, defenseBonus: 3, intervalMultiplier: .98, rewardMultiplier: 3.3 },
-  { id: 'cindermaw', name: 'Cindermaw Basilisk', title: 'Devourer of the Hearth', icon: '🐍', tier: 6, unlockPage: 'cooking', unlockName: 'Cooking', description: 'A furnace-bellied basilisk nesting beneath the old kitchens.', healthMultiplier: 1.8, attackMultiplier: 1.12, defenseBonus: 3, intervalMultiplier: .96, rewardMultiplier: 3.5 },
-  { id: 'chainmasterVarr', name: 'Chainmaster Varr', title: 'Breaker of Oaths', icon: '⛓️', tier: 7, unlockPage: 'workers', unlockName: 'Workers', description: 'Defeat the cruel overseer and free Emberfall’s Workers.', healthMultiplier: 1.88, attackMultiplier: 1.15, defenseBonus: 4, intervalMultiplier: .94, rewardMultiplier: 3.8 },
-  { id: 'buriedColossus', name: 'The Buried Colossus', title: 'Titan Below', icon: '🗿', tier: 8, unlockPage: 'metal detector', unlockName: 'Metal Detector', description: 'Its shattered core reveals signals hidden beneath the realm.', healthMultiplier: 1.96, attackMultiplier: 1.18, defenseBonus: 5, intervalMultiplier: .92, rewardMultiplier: 4.1 },
-  { id: 'bannerlessKing', name: 'The Bannerless King', title: 'Enemy of Every Banner', icon: '👑', tier: 10, unlockPage: 'factions', unlockName: 'Factions', description: 'The three factions will answer only after their old enemy falls.', healthMultiplier: 2.05, attackMultiplier: 1.22, defenseBonus: 6, intervalMultiplier: .9, rewardMultiplier: 4.5 },
-  { id: 'crownedVoidDrake', name: 'Crowned Void Drake', title: 'The Final Tollkeeper', icon: '🐉', tier: 12, unlockPage: 'auction', unlockName: 'Auction House', description: 'A realm-spanning predator hoarding the roads of trade.', healthMultiplier: 2.15, attackMultiplier: 1.26, defenseBonus: 8, intervalMultiplier: .88, rewardMultiplier: 5 },
+  { id: 'buriedColossus', name: 'The Buried Colossus', title: 'Titan Below', icon: '🗿', tier: 10, unlockPage: 'metal detector', unlockName: 'Metal Detector', description: 'A Tier 10-scale titan whose shattered core can reveal signals hidden beneath the realm.', healthMultiplier: 1, attackMultiplier: 1, defenseBonus: 0, intervalMultiplier: 1, rewardMultiplier: 3 },
+  { id: 'bannerlessKing', name: 'The Bannerless King', title: 'Enemy of Every Banner', icon: '👑', tier: 20, unlockPage: 'factions', unlockName: 'Factions', description: 'A Tier 20-scale warlord. His defeat gives the realm’s three factions room to rally.', healthMultiplier: 1, attackMultiplier: 1, defenseBonus: 0, intervalMultiplier: 1, rewardMultiplier: 3.5 },
+  { id: 'bramblemaw', name: 'Bramblemaw', title: 'Gatekeeper of the Wilds', icon: '🌳', tier: 30, description: 'An ancient beast carrying the power of a Tier 30 normal enemy.', healthMultiplier: 1, attackMultiplier: 1, defenseBonus: 0, intervalMultiplier: 1, rewardMultiplier: 4 },
+  { id: 'ironhideGolem', name: 'Ironhide Golem', title: 'Warden of the Quarry', icon: '🪨', tier: 40, description: 'A living wall of stone carrying the power of a Tier 40 normal enemy.', healthMultiplier: 1, attackMultiplier: 1, defenseBonus: 0, intervalMultiplier: 1, rewardMultiplier: 4.5 },
+  { id: 'ashenForgemaster', name: 'Ashen Forgemaster', title: 'Keeper of the First Flame', icon: '🔥', tier: 50, description: 'The fallen smith commands power equal to a Tier 50 normal enemy.', healthMultiplier: 1, attackMultiplier: 1, defenseBonus: 0, intervalMultiplier: 1, rewardMultiplier: 5 },
+  { id: 'tideclaw', name: 'Tideclaw', title: 'Tyrant of the River Gate', icon: '🦀', tier: 60, description: 'A plated river horror carrying the power of a Tier 60 normal enemy.', healthMultiplier: 1, attackMultiplier: 1, defenseBonus: 0, intervalMultiplier: 1, rewardMultiplier: 5.5 },
+  { id: 'blightrootMatron', name: 'Blightroot Matron', title: 'The Withered Harvest', icon: '🥀', tier: 70, description: 'A worldroot corruption carrying the power of a Tier 70 normal enemy.', healthMultiplier: 1, attackMultiplier: 1, defenseBonus: 0, intervalMultiplier: 1, rewardMultiplier: 6 },
+  { id: 'cindermaw', name: 'Cindermaw Basilisk', title: 'Devourer of the Hearth', icon: '🐍', tier: 80, description: 'A furnace-bellied basilisk carrying the power of a Tier 80 normal enemy.', healthMultiplier: 1, attackMultiplier: 1, defenseBonus: 0, intervalMultiplier: 1, rewardMultiplier: 6.5 },
+  { id: 'chainmasterVarr', name: 'Chainmaster Varr', title: 'Breaker of Oaths', icon: '⛓️', tier: 90, description: 'An ancient overseer carrying the power of a Tier 90 normal enemy.', healthMultiplier: 1, attackMultiplier: 1, defenseBonus: 0, intervalMultiplier: 1, rewardMultiplier: 7 },
+  { id: 'crownedVoidDrake', name: 'Crowned Void Drake', title: 'The Final Tollkeeper', icon: '🐉', tier: 100, description: 'A realm-spanning predator carrying the power of a Tier 100 normal enemy.', healthMultiplier: 1, attackMultiplier: 1, defenseBonus: 0, intervalMultiplier: 1, rewardMultiplier: 8 },
 ]
 
 const treeData = [
