@@ -1,5 +1,6 @@
 export type Page = 'battle' | 'woodcutting' | 'mining' | 'fishing' | 'farming' | 'crafting' | 'cooking' | 'metal detector' | 'workers' | 'inventory' | 'achievements' | 'factions' | 'clans' | 'auction' | 'high scores' | 'shop' | 'about'
-export const startingPages: Page[] = ['battle', 'woodcutting', 'mining', 'fishing', 'farming', 'crafting', 'cooking', 'workers', 'inventory', 'achievements', 'clans', 'auction', 'high scores', 'shop', 'about']
+export const temporarilyHiddenPages: Page[] = ['fishing', 'farming', 'cooking']
+export const startingPages: Page[] = ['battle', 'woodcutting', 'mining', 'crafting', 'workers', 'inventory', 'achievements', 'clans', 'auction', 'high scores', 'shop', 'about']
 export const tierFiveUnlockPages: Page[] = []
 export type Skill = 'woodcutting' | 'mining' | 'fishing' | 'farming'
 export type GearSlot = 'weapon' | 'helmet' | 'chest' | 'legs' | 'boots' | 'gloves' | 'ring' | 'amulet' | 'pickaxe' | 'hatchet' | 'fishingRod' | 'farmingHoe'

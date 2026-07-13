@@ -31,6 +31,7 @@ const props = defineProps<{
   enemyHealth: string
   combatStats: CombatStats
   battleButtonLabel: string
+  foodEnabled: boolean
   foods: Food[]
   selectedFood: string | null
   activeFoodHot: { item: string; remainingHealing: number; remaining: number; stacks: number } | null
@@ -97,15 +98,17 @@ function bossProgressLabel(boss: BossDefinition) {
         <div class="meter health" :class="{ recovery: recovering }"><i :style="{ width: heroHealth }"></i></div>
         <div v-if="recovering" class="recovery-line"><span>Defeat recovery</span><div class="meter"><i :style="{ width: recoveryPercent }"></i></div></div>
 
-        <section class="food-dock">
+        <section v-if="foodEnabled" class="food-dock">
           <div><label for="battle-food">FOOD</label><select id="battle-food" :value="selectedFood || ''" @change="selectFood"><option value="">Select food</option><option v-for="food in foods" :key="food.item" :value="food.item">{{ food.icon }} {{ food.name }} · {{ food.owned }} owned · +{{ food.healing }} HP{{ food.hotHealing ? ` · HoT +${food.hotHealing}/${food.hotDuration}s` : '' }}</option></select></div>
           <button type="button" :disabled="!selectedFood || !selectedFoodDetails()?.owned || (health >= combatStats.maxHealth && !selectedFoodDetails()?.hotHealing) || recovering" @click="selectedFood && emit('eat', selectedFood)">EAT <span v-if="selectedFoodDetails()">+{{ selectedFoodDetails()?.healing }} HP</span></button>
           <button v-if="autoEatUnlocked" type="button" class="auto-eat" :class="{ enabled: autoEat }" @click="emit('toggle-auto-eat', !autoEat)"><span>AUTO-EAT</span><b>{{ autoEat ? 'ON' : 'OFF' }}</b></button>
         </section>
-        <small v-if="selectedFoodDetails()?.hotHealing" class="food-hot-note">HOT · +{{ selectedFoodDetails()?.hotHealing }} health over {{ selectedFoodDetails()?.hotDuration }}s · additional meals stack duration</small>
-        <small v-if="activeFoodHot" class="food-hot-active">✦ REGENERATING · {{ activeFoodHot.remainingHealing }} health queued over {{ (activeFoodHot.remaining / 1000).toFixed(1) }}s<span v-if="activeFoodHot.stacks > 1"> · {{ activeFoodHot.stacks }} stacks</span></small>
-        <small v-if="autoEatUnlocked && autoEat" class="auto-eat-note">Uses selected food below {{ autoEatThreshold }}% health<span v-if="autoEatCooldownRemaining"> · ready in {{ (autoEatCooldownRemaining / 1000).toFixed(1) }}s</span></small>
-        <small v-else-if="healingPowerBonus" class="auto-eat-note">Food healing +{{ healingPowerBonus }}% from Shop upgrades</small>
+        <template v-if="foodEnabled">
+          <small v-if="selectedFoodDetails()?.hotHealing" class="food-hot-note">HOT · +{{ selectedFoodDetails()?.hotHealing }} health over {{ selectedFoodDetails()?.hotDuration }}s · additional meals stack duration</small>
+          <small v-if="activeFoodHot" class="food-hot-active">✦ REGENERATING · {{ activeFoodHot.remainingHealing }} health queued over {{ (activeFoodHot.remaining / 1000).toFixed(1) }}s<span v-if="activeFoodHot.stacks > 1"> · {{ activeFoodHot.stacks }} stacks</span></small>
+          <small v-if="autoEatUnlocked && autoEat" class="auto-eat-note">Uses selected food below {{ autoEatThreshold }}% health<span v-if="autoEatCooldownRemaining"> · ready in {{ (autoEatCooldownRemaining / 1000).toFixed(1) }}s</span></small>
+          <small v-else-if="healingPowerBonus" class="auto-eat-note">Food healing +{{ healingPowerBonus }}% from Shop upgrades</small>
+        </template>
 
       </article>
 

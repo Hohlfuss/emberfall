@@ -1,5 +1,5 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { startingPages } from './gameData'
+import { startingPages, temporarilyHiddenPages } from './gameData'
 import type { BossDefinition, CookingRecipe, Gear, GearSlot, Page, ProfessionStats, RareMaterial, Recipe, Resource, Skill } from './gameData'
 
 type ShopUpgradeId = 'medic' | 'scouting' | 'training' | 'fortitude' | 'autoBattle' | 'autoEat' | 'healingPower'
@@ -122,6 +122,11 @@ class ApiError extends Error {
 
 export function useGame() {
   const allTabs: Page[] = ['battle', 'woodcutting', 'mining', 'fishing', 'farming', 'crafting', 'cooking', 'metal detector', 'workers', 'inventory', 'achievements', 'factions', 'clans', 'auction', 'high scores', 'shop', 'about']
+  const hiddenGearSlots = new Set<GearSlot>(['fishingRod', 'farmingHoe'])
+  const hiddenStorePaths = new Set(['fishingRods', 'farmingHoes'])
+  const hiddenShopUpgrades = new Set<ShopUpgradeId>(['autoEat', 'healingPower'])
+  const hiddenAchievementIds = new Set(['firstMeal', 'cookTenMeals', 'fishFive', 'farmFive', 'cookFive', 'cookHundredMeals', 'fishTen', 'fishTwenty', 'fishFifty', 'farmTen', 'farmTwenty', 'farmFifty', 'cookTen', 'cookTwenty'])
+  const hiddenProfessionTitles = new Set(['Master Chef', 'Ember Chef', 'Tidecaller', 'Lord of the Deep', 'Harvestkeeper', 'World Gardener'])
   const page = ref<Page>('battle')
   const authMode = ref<'login' | 'register'>('login')
   const authUsername = ref('')
@@ -141,7 +146,7 @@ export function useGame() {
   const actionError = ref('')
   const gameId = ref('')
   const state = ref<ServerState | null>(null)
-  const tabs = computed(() => allTabs.filter(tab => (state.value?.unlockedPages || startingPages).includes(tab)))
+  const tabs = computed(() => allTabs.filter(tab => !temporarilyHiddenPages.includes(tab) && (state.value?.unlockedPages || startingPages).includes(tab)))
   const config = ref<GameConfig | null>(null)
   const toasts = ref<Toast[]>([])
   const leaderboardCategory = ref<LeaderboardCategory>('woodcutting')
@@ -185,7 +190,10 @@ export function useGame() {
   const emptyEquipment = { weapon: undefined, helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: undefined, hatchet: undefined, fishingRod: undefined, farmingHoe: undefined } satisfies Record<GearSlot, string | undefined>
 
   const playerName = computed(() => state.value?.playerName || '')
-  const playerTitle = computed(() => state.value?.playerTitle || 'Aspiring Adventurer')
+  const playerTitle = computed(() => {
+    const title = state.value?.playerTitle || 'Aspiring Adventurer'
+    return hiddenProfessionTitles.has(title) ? 'Aspiring Adventurer' : title
+  })
   const gold = computed(() => state.value?.gold || 0)
   const level = computed(() => state.value?.level || 1)
   const xp = computed(() => state.value?.xp || 0)
@@ -236,11 +244,18 @@ export function useGame() {
   const farmingPlots = computed(() => config.value?.farmingPlots || [])
   const allResources = computed(() => config.value?.allResources || [])
   const rareMaterials = computed(() => config.value?.rareMaterials || [])
-  const gearCatalog = computed(() => config.value?.gearCatalog || {})
+  const gearCatalog = computed(() => Object.fromEntries(Object.entries(config.value?.gearCatalog || {}).map(([id, gear]) => [id, {
+    ...gear,
+    description: gear.description
+      .replaceAll('every gathering skill', 'woodcutting and mining')
+      .replaceAll('every gathering motion', 'woodcutting and mining work')
+      .replaceAll('gathering quicker', 'woodcutting and mining quicker'),
+    bonuses: Object.fromEntries(Object.entries(gear.bonuses).filter(([stat]) => !stat.startsWith('fishing') && !stat.startsWith('farming') && !stat.startsWith('cooking'))),
+  }])) as Record<string, Gear>)
   const slotLabels = computed(() => config.value?.slotLabels || {} as Record<GearSlot, string>)
-  const gearSlots = computed(() => Object.keys(slotLabels.value) as GearSlot[])
-  const storePaths = computed(() => config.value?.storePaths || [])
-  const shopUpgradeDetails = computed(() => config.value?.shopUpgradeDetails || [])
+  const gearSlots = computed(() => (Object.keys(slotLabels.value) as GearSlot[]).filter(slot => !hiddenGearSlots.has(slot)))
+  const storePaths = computed(() => (config.value?.storePaths || []).filter(path => !hiddenStorePaths.has(path.id)))
+  const shopUpgradeDetails = computed(() => (config.value?.shopUpgradeDetails || []).filter(upgrade => !hiddenShopUpgrades.has(upgrade.id)))
   const googleClientId = computed(() => config.value?.googleClientId || '')
   const professions = computed(() => state.value?.professions || { woodcutting: { level: 1, xp: 0, xpNeeded: 61 }, mining: { level: 1, xp: 0, xpNeeded: 61 }, fishing: { level: 1, xp: 0, xpNeeded: 61 }, farming: { level: 1, xp: 0, xpNeeded: 61 } })
   const jobs = computed(() => state.value?.jobs || {})
@@ -253,11 +268,13 @@ export function useGame() {
   const workerProgress = computed(() => state.value?.workerProgress || {})
   const freeWorkers = computed(() => state.value?.freeWorkers || 0)
   const equipment = computed(() => state.value?.equipment || emptyEquipment)
-  const ownedGear = computed(() => state.value?.ownedGear || [])
+  const ownedGear = computed(() => (state.value?.ownedGear || []).filter(id => !hiddenGearSlots.has(gearCatalog.value[id]?.slot)))
   const gearSellPrices = computed(() => state.value?.gearSellPrices || {})
   const shopUpgrades = computed(() => state.value?.shopUpgrades || { medic: 0, scouting: 0, training: 0, fortitude: 0, autoBattle: 0, autoEat: 0, healingPower: 0 })
-  const achievements = computed(() => state.value?.achievements || [])
-  const factionDefinitions = computed(() => config.value?.factionDefinitions || [])
+  const achievements = computed(() => (state.value?.achievements || []).filter(achievement => !hiddenAchievementIds.has(achievement.id)))
+  const factionDefinitions = computed(() => (config.value?.factionDefinitions || [])
+    .filter(faction => faction.id !== 'tidecallers' && faction.id !== 'harvesters')
+    .map(faction => faction.id === 'artificers' ? { ...faction, description: 'Masters of the Ember Forge. Reputation comes from crafting.', rewards: ['+5% crafting speed', '+5% material conservation', '+5% bonus output chance', '+15% crafting speed'] } : faction))
   const alliedFaction = computed(() => state.value?.alliedFaction || null)
   const factions = computed(() => state.value?.factions || {
     wardens: { reputation: 0, rank: 0 },
@@ -300,13 +317,16 @@ export function useGame() {
     progress: state.value?.crafting?.id === recipe.id ? state.value.crafting.progress : 0,
     remaining: state.value?.crafting?.id === recipe.id ? state.value.crafting.remaining : undefined,
   })))
-  const craftingRecipes = computed(() => recipeList.value.filter(recipe => !recipe.outputGear || Boolean(state.value?.nextGearIds.includes(recipe.outputGear))))
+  const craftingRecipes = computed(() => recipeList.value.filter(recipe => {
+    if (recipe.outputGear && hiddenGearSlots.has(gearCatalog.value[recipe.outputGear]?.slot)) return false
+    return !recipe.outputGear || Boolean(state.value?.nextGearIds.includes(recipe.outputGear))
+  }))
   const cookingRecipeList = computed(() => (config.value?.cookingRecipes || []).map(recipe => ({
     ...recipe,
     progress: state.value?.cooking?.id === recipe.id ? state.value.cooking.progress : 0,
     remaining: state.value?.cooking?.id === recipe.id ? state.value.cooking.remaining : undefined,
   })))
-  const battleFoods = computed(() => cookingRecipeList.value.map(recipe => ({
+  const battleFoods = computed(() => temporarilyHiddenPages.includes('cooking') ? [] : cookingRecipeList.value.map(recipe => ({
     item: recipe.outputItem,
     name: recipe.name,
     icon: recipe.icon,
@@ -336,9 +356,6 @@ export function useGame() {
       { name: 'Logs', icon: '🌲', items: owned.filter(([item]) => logNames.has(item)) },
       { name: 'Rocks', icon: '🪨', items: owned.filter(([item]) => rockNames.has(item)) },
       { name: 'Ores', icon: '⛏️', items: owned.filter(([item]) => oreNames.has(item)) },
-      { name: 'Fish', icon: '🐟', items: owned.filter(([item]) => fishNames.has(item)) },
-      { name: 'Crops', icon: '🌾', items: owned.filter(([item]) => cropNames.has(item)) },
-      { name: 'Foods', icon: '🍲', items: owned.filter(([item]) => foodNames.has(item)) },
       { name: 'Refined & rare', icon: '💎', items: owned.filter(([item]) => !logNames.has(item) && !rockNames.has(item) && !oreNames.has(item) && !fishNames.has(item) && !cropNames.has(item) && !foodNames.has(item)) },
     ]
   })

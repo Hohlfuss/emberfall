@@ -27,7 +27,7 @@ test('only metal detector and factions are currently boss-gated', () => {
   ])
 })
 
-test('core professions are available from the beginning', () => {
-  assert.deepEqual(startingPages, ['battle', 'woodcutting', 'mining', 'fishing', 'farming', 'crafting', 'cooking', 'workers', 'inventory', 'achievements', 'clans', 'auction', 'high scores', 'shop', 'about'])
+test('currently visible core activities are available from the beginning', () => {
+  assert.deepEqual(startingPages, ['battle', 'woodcutting', 'mining', 'crafting', 'workers', 'inventory', 'achievements', 'clans', 'auction', 'high scores', 'shop', 'about'])
   assert.deepEqual(tierFiveUnlockPages, [])
 })
