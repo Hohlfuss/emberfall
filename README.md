@@ -15,7 +15,7 @@ Run these files in the Supabase SQL editor:
 5. `backend/farming-schema.sql` to add farming to leaderboard statistics.
 6. `backend/cooking-schema.sql` to add cooking to leaderboard statistics.
 7. `backend/auction-schema.sql` if the auction house has not already been created.
-8. The latest `backend/clan-schema.sql` to create or upgrade clans, memberships, invitations, contributions, levels, and clan chat.
+8. The latest `backend/clan-schema.sql` to create or upgrade clans, memberships, invitations, contributions, levels, weekly raids, rewards, and clan chat.
 
 Use the Supabase **service role/secret key** on Render, not a browser publishable key. Never add that secret to `frontend/.env` or commit it.
 
@@ -60,7 +60,7 @@ Players can also register and log in with a username and password. The browser s
 
 ## Area progression and navigation
 
-New heroes begin with Battle, Woodcutting, Mining, Fishing, Farming, Crafting, Cooking, Workers, Inventory, Achievements, Clans, Auction House, High Scores, and Shop.
+New heroes currently begin with Battle, Woodcutting, Mining, Crafting, Workers, Inventory, Achievements, Clans, Auction House, High Scores, Shop, and About. Fishing, Farming, and Cooking data is preserved but its UI is temporarily disabled.
 
 Some cooked foods provide healing over time in addition to instant healing. Eating additional HoT foods queues their full effects after the current one, stacking both the remaining duration and healing; the active queue is saved with the player.
 
@@ -72,7 +72,9 @@ Players can create public or invite-only clans. Public clans appear in Clan Find
 
 Each clan receives a different gathering-material request every UTC day. Members contribute that material for clan XP equal to `quantity × material tier`, raising the shared clan level and the clan leaderboard position. The clan page also shows all-time top contributors and allows any player to gift owned inventory items directly to another username or unique display name.
 
-Desktop and mobile both use the horizontally scrollable area bar below the header. A colored separator distinguishes Cooking from Crafting in the profession group.
+Each clan also receives a rotating weekly raid boss from Monday 00:00 UTC through the following Monday. Every member can make one server-calculated attempt per UTC day using their current combat stats. Raid knockouts do not change normal health or gold. The clan page shows shared boss health and damage by member. A kill creates a gold and player-XP reward for every current member, grants clan XP, and increases the difficulty of the clan's next weekly raid.
+
+Desktop and mobile both use the horizontally scrollable area bar directly below the header.
 
 ## Local development
 

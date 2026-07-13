@@ -24,6 +24,7 @@ import {
 import { AUTO_EAT_COOLDOWN_MS, AUTO_EAT_HEALTH_THRESHOLD, autoEatReady, deathGoldPenalty, healOverTimeProgress, stackedHealOverTimeTiming, upgradedFoodHealing } from './combatFood.ts'
 import { sanitizeClanDescription, sanitizeClanMessage, sanitizeClanName, sanitizeClanVisibility, sanitizePlayerIdentifier, type ClanVisibility } from './clans.ts'
 import { clanProgress, contributionValue, dailyMaterialIndex, utcDate } from './clanProgress.ts'
+import { simulateRaidAttempt, utcWeekKey, weeklyRaidDefinition, weeklyRaidStats } from './clanRaids.ts'
 import { supabase } from "../supabase.ts";
 import { canonicalDisplayName, googleUsernameCandidates, sanitizeDisplayName, verifyGoogleCredential } from './googleAuth.ts'
 
@@ -366,6 +367,7 @@ type ClanRow = {
   owner_username: string
   created_at: string
   contribution_xp: number
+  raid_victories: number
 }
 
 type ClanMembershipRow = {
@@ -373,6 +375,37 @@ type ClanMembershipRow = {
   username: string
   role: 'owner' | 'member'
   joined_at: string
+}
+
+type ClanRaidRow = {
+  id: string
+  clan_id: string
+  week_key: string
+  boss_id: string
+  boss_name: string
+  boss_title: string
+  boss_icon: string
+  boss_description: string
+  difficulty: number
+  max_health: number
+  current_health: number
+  attack: number
+  defense: number
+  attack_speed: number
+  gold_reward: number
+  xp_reward: number
+  clan_xp_reward: number
+  starts_at: string
+  ends_at: string
+  defeated_at: string | null
+}
+
+type ClanRaidAttemptRow = {
+  username: string
+  attempt_date: string
+  damage: number
+  survived: boolean
+  created_at: string
 }
 
 const chatMessages: ChatMessage[] = []
@@ -2328,6 +2361,93 @@ function clanOnlineCount(usernames: string[]) {
     .map(session => session.username)).size
 }
 
+async function ensureWeeklyClanRaid(clan: ClanRow, now = Date.now()): Promise<ClanRaidRow> {
+  const weekKey = utcWeekKey(now)
+  const existing = await supabase
+    .from('clan_raids')
+    .select('*')
+    .eq('clan_id', clan.id)
+    .eq('week_key', weekKey)
+    .maybeSingle()
+  if (existing.error) throw existing.error
+  if (existing.data) return existing.data as ClanRaidRow
+
+  const boss = weeklyRaidDefinition(weekKey)
+  const stats = weeklyRaidStats(clan.raid_victories || 0)
+  const startsAt = Date.parse(`${weekKey}T00:00:00.000Z`)
+  const raid = {
+    id: randomUUID(),
+    clan_id: clan.id,
+    week_key: weekKey,
+    boss_id: boss.id,
+    boss_name: boss.name,
+    boss_title: boss.title,
+    boss_icon: boss.icon,
+    boss_description: boss.description,
+    difficulty: stats.difficulty,
+    max_health: stats.maxHealth,
+    current_health: stats.maxHealth,
+    attack: stats.attack,
+    defense: stats.defense,
+    attack_speed: stats.attackSpeed,
+    gold_reward: stats.goldReward,
+    xp_reward: stats.xpReward,
+    clan_xp_reward: stats.clanXpReward,
+    starts_at: new Date(startsAt).toISOString(),
+    ends_at: new Date(startsAt + 7 * 86_400_000).toISOString(),
+  }
+  const inserted = await supabase.from('clan_raids').insert(raid).select('*').single()
+  if (!inserted.error) return inserted.data as ClanRaidRow
+  if (inserted.error.code !== '23505') throw inserted.error
+
+  const raced = await supabase
+    .from('clan_raids')
+    .select('*')
+    .eq('clan_id', clan.id)
+    .eq('week_key', weekKey)
+    .single()
+  if (raced.error) throw raced.error
+  return raced.data as ClanRaidRow
+}
+
+async function claimPendingClanRaidRewards(username: string, game: Game) {
+  const pendingResult = await supabase
+    .from('clan_raid_rewards')
+    .select('id, gold_reward, xp_reward')
+    .eq('username', username)
+    .is('claimed_at', null)
+    .order('created_at', { ascending: true })
+  if (pendingResult.error) throw pendingResult.error
+  if (!pendingResult.data?.length) return null
+
+  const claimedAt = new Date().toISOString()
+  const claimResult = await supabase
+    .from('clan_raid_rewards')
+    .update({ claimed_at: claimedAt })
+    .in('id', pendingResult.data.map(reward => reward.id))
+    .is('claimed_at', null)
+    .select('id, gold_reward, xp_reward')
+  if (claimResult.error) throw claimResult.error
+  if (!claimResult.data?.length) return null
+
+  const before = serializeGame(game)
+  const gold = claimResult.data.reduce((total, reward) => total + Number(reward.gold_reward), 0)
+  const xp = claimResult.data.reduce((total, reward) => total + Number(reward.xp_reward), 0)
+  try {
+    giveGold(game, gold)
+    gainXp(game, xp)
+    game.message = `Clan raid reward claimed: +${gold.toLocaleString()} gold and +${xp.toLocaleString()} XP.`
+    pushEvent(game, 'achievement', 'Clan raid victory!', `+${gold.toLocaleString()} gold · +${xp.toLocaleString()} XP`)
+    game.revision++
+    await saveGame(username, game)
+  } catch (error) {
+    Object.assign(game, deserializeGame(before))
+    await supabase.from('clan_raid_rewards').update({ claimed_at: null }).in('id', claimResult.data.map(reward => reward.id))
+    throw error
+  }
+  return { gold, xp }
+}
+
 async function clanDetails(username: string) {
   const membership = await clanMembership(username)
   if (!membership) return null
@@ -2348,9 +2468,32 @@ async function clanDetails(username: string) {
   const clan = clanResult.data as ClanRow
   const members = (membersResult.data ?? []) as ClanMembershipRow[]
   const contributors = contributorsResult.data ?? []
-  const names = await playerNameMap([clan.owner_username, ...members.map(member => member.username), ...contributors.map(contributor => contributor.username)])
+  const raid = await ensureWeeklyClanRaid(clan)
+  const attemptsResult = await supabase
+    .from('clan_raid_attempts')
+    .select('username, attempt_date, damage, survived, created_at')
+    .eq('raid_id', raid.id)
+    .order('created_at', { ascending: true })
+  if (attemptsResult.error) throw attemptsResult.error
+  const attempts = (attemptsResult.data ?? []) as ClanRaidAttemptRow[]
+  const names = await playerNameMap([clan.owner_username, ...members.map(member => member.username), ...contributors.map(contributor => contributor.username), ...attempts.map(attempt => attempt.username)])
   const onlineCutoff = Date.now() - ONLINE_WINDOW_MS
   const progress = clanProgress(clan.contribution_xp || 0)
+  const raidTotals = new Map<string, { attempts: number; totalDamage: number; lastDamage: number; attemptedToday: boolean }>()
+  for (const attempt of attempts) {
+    const total = raidTotals.get(attempt.username) || { attempts: 0, totalDamage: 0, lastDamage: 0, attemptedToday: false }
+    total.attempts++
+    total.totalDamage += Number(attempt.damage)
+    total.lastDamage = Number(attempt.damage)
+    total.attemptedToday ||= attempt.attempt_date === today
+    raidTotals.set(attempt.username, total)
+  }
+  const raidContributors = members.map(member => ({
+    username: member.username,
+    name: names.get(member.username) || member.username,
+    ...(raidTotals.get(member.username) || { attempts: 0, totalDamage: 0, lastDamage: 0, attemptedToday: false }),
+  })).sort((left, right) => right.totalDamage - left.totalDamage || left.name.localeCompare(right.name))
+  const ownRaidTotal = raidTotals.get(username)
   return {
     id: clan.id,
     name: clan.name,
@@ -2372,6 +2515,30 @@ async function clanDetails(username: string) {
       totalItems: Number(contributor.total_items),
       totalValue: Number(contributor.total_value),
     })),
+    raid: {
+      id: raid.id,
+      weekKey: raid.week_key,
+      bossId: raid.boss_id,
+      name: raid.boss_name,
+      title: raid.boss_title,
+      icon: raid.boss_icon,
+      description: raid.boss_description,
+      difficulty: Number(raid.difficulty),
+      maxHealth: Number(raid.max_health),
+      currentHealth: Number(raid.current_health),
+      attack: Number(raid.attack),
+      defense: Number(raid.defense),
+      attackSpeed: Number(raid.attack_speed),
+      startsAt: raid.starts_at,
+      endsAt: raid.ends_at,
+      defeatedAt: raid.defeated_at,
+      defeated: Boolean(raid.defeated_at) || Number(raid.current_health) <= 0,
+      attemptAvailable: !raid.defeated_at && Number(raid.current_health) > 0 && !ownRaidTotal?.attemptedToday && Date.now() < Date.parse(raid.ends_at),
+      attemptedToday: Boolean(ownRaidTotal?.attemptedToday),
+      nextAttemptAt: ownRaidTotal?.attemptedToday ? Date.parse(`${today}T00:00:00.000Z`) + 86_400_000 : null,
+      rewards: { gold: Number(raid.gold_reward), xp: Number(raid.xp_reward), clanXp: Number(raid.clan_xp_reward) },
+      contributors: raidContributors,
+    },
     members: members.map(member => ({
       username: member.username,
       name: names.get(member.username) || member.username,
@@ -2491,7 +2658,15 @@ app.get('/api/clans', async (request, response) => {
   const session = chatSession(request)
   if (!session) return response.status(401).json({ error: 'Log in to view clans.' })
   try {
-    return response.json(await clanSnapshot(session.username))
+    const game = games.get(session.gameId)
+    const reward = game ? await claimPendingClanRaidRewards(session.username, game) : null
+    return response.json({
+      ...(await clanSnapshot(session.username)),
+      ...(reward && game ? {
+        state: publicState(game),
+        notice: `Clan raid reward claimed: +${reward.gold.toLocaleString()} gold and +${reward.xp.toLocaleString()} XP.`,
+      } : {}),
+    })
   } catch (error) {
     return clanServerError(response, error, 'Could not load clans.')
   }
@@ -2576,6 +2751,67 @@ app.post('/api/clans/contribute', async (request, response) => {
     return response.json({ ...(await clanSnapshot(session.username)), state: publicState(game) })
   } catch (error) {
     return clanServerError(response, error, 'Could not record the clan contribution.')
+  }
+})
+
+app.post('/api/clans/raid/attempt', async (request, response) => {
+  const session = chatSession(request)
+  if (!session) return response.status(401).json({ error: 'Log in to fight the clan raid boss.' })
+  const game = games.get(session.gameId)
+  if (!game) return response.status(409).json({ error: 'Your game session is not ready.' })
+
+  try {
+    const membership = await clanMembership(session.username)
+    if (!membership) return response.status(403).json({ error: 'Join a clan before fighting its raid boss.' })
+    const clanResult = await supabase.from('clans').select('*').eq('id', membership.clan_id).maybeSingle()
+    if (clanResult.error) throw clanResult.error
+    if (!clanResult.data) return response.status(404).json({ error: 'Clan not found.' })
+
+    const raid = await ensureWeeklyClanRaid(clanResult.data as ClanRow)
+    const attempt = simulateRaidAttempt(combatStats(game), {
+      currentHealth: Number(raid.current_health),
+      attack: Number(raid.attack),
+      defense: Number(raid.defense),
+      attackSpeed: Number(raid.attack_speed),
+    })
+    const attemptDate = utcDate()
+    const rpc = await supabase.rpc('record_clan_raid_attempt', {
+      attempt_id: randomUUID(),
+      target_raid_id: raid.id,
+      target_clan_id: membership.clan_id,
+      attacker_username: session.username,
+      attempt_day: attemptDate,
+      dealt_damage: attempt.damage,
+      attacker_survived: attempt.survived,
+    })
+    if (rpc.error) {
+      if (rpc.error.code === '23505' || /clan_raid_attempts_raid_id_username_attempt_date_key|duplicate key/i.test(rpc.error.message)) {
+        return response.status(409).json({ error: 'You already used today’s clan raid attempt. Try again after 00:00 UTC.' })
+      }
+      if (/already been defeated|not active/i.test(rpc.error.message)) return response.status(409).json({ error: rpc.error.message })
+      throw rpc.error
+    }
+
+    const outcome = Array.isArray(rpc.data) ? rpc.data[0] : rpc.data
+    const appliedDamage = Number(outcome?.applied_damage || 0)
+    const defeated = Boolean(outcome?.raid_defeated)
+    game.message = defeated
+      ? `${raid.boss_name} was defeated! Your clan earned ${Number(outcome?.awarded_clan_xp || 0).toLocaleString()} clan XP.`
+      : `You dealt ${appliedDamage.toLocaleString()} damage to ${raid.boss_name}. Your normal health and gold were not affected.`
+    game.revision++
+
+    const reward = defeated ? await claimPendingClanRaidRewards(session.username, game) : null
+    if (!reward) await saveGame(session.username, game)
+    const notice = defeated
+      ? `${raid.boss_name} defeated! Every current clan member receives ${Number(outcome?.personal_gold || 0).toLocaleString()} gold and ${Number(outcome?.personal_xp || 0).toLocaleString()} XP. The clan gained ${Number(outcome?.awarded_clan_xp || 0).toLocaleString()} XP.`
+      : `${appliedDamage.toLocaleString()} raid damage dealt. The defeat caused no health or gold penalty.`
+    return response.json({
+      ...(await clanSnapshot(session.username)),
+      state: publicState(game),
+      notice,
+    })
+  } catch (error) {
+    return clanServerError(response, error, 'Could not complete the clan raid attempt.')
   }
 })
 

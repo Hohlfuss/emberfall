@@ -74,9 +74,16 @@ export type ClanSummary = ClanProgress & { id: string; name: string; description
 export type ClanMember = { username: string; name: string; role: 'owner' | 'member'; joinedAt: string; online: boolean }
 export type ClanContributor = { username: string; name: string; totalItems: number; totalValue: number }
 export type ClanDailyRequest = { date: string; item: string; tier: number; icon: string; valueEach: number; resetsAt: number }
-export type ClanDetails = ClanSummary & { role: 'owner' | 'member'; online: number; members: ClanMember[]; dailyRequest: ClanDailyRequest; dailyContributionValue: number; dailyContributionItems: number; topContributors: ClanContributor[] }
+export type ClanRaidContributor = { username: string; name: string; attempts: number; totalDamage: number; lastDamage: number; attemptedToday: boolean }
+export type ClanRaid = {
+  id: string; weekKey: string; bossId: string; name: string; title: string; icon: string; description: string
+  difficulty: number; maxHealth: number; currentHealth: number; attack: number; defense: number; attackSpeed: number
+  startsAt: string; endsAt: string; defeatedAt: string | null; defeated: boolean; attemptAvailable: boolean; attemptedToday: boolean; nextAttemptAt: number | null
+  rewards: { gold: number; xp: number; clanXp: number }; contributors: ClanRaidContributor[]
+}
+export type ClanDetails = ClanSummary & { role: 'owner' | 'member'; online: number; members: ClanMember[]; dailyRequest: ClanDailyRequest; dailyContributionValue: number; dailyContributionItems: number; topContributors: ClanContributor[]; raid: ClanRaid }
 export type ClanInvitation = { id: string; clanId: string; clanName: string; clanVisibility: ClanVisibility; invitedByUsername: string; invitedByName: string; createdAt: string }
-type ClanSnapshot = { clan: ClanDetails | null; invitations: ClanInvitation[]; publicClans: ClanSummary[]; state?: ServerState }
+type ClanSnapshot = { clan: ClanDetails | null; invitations: ClanInvitation[]; publicClans: ClanSummary[]; state?: ServerState; notice?: string }
 type ClanChatSnapshot = { clan: { id: string; name: string } | null; messages: ChatMessage[]; online: number }
 export type AuctionListing = { id: string; seller_username: string; seller_name: string; item_name: string; quantity: number; price: number; created_at: string }
 export type DetectorReward = { kind: 'empty' | 'gold' | 'material' | 'rare' | 'gear'; label: string; detail: string; icon: string }
@@ -603,6 +610,7 @@ export function useGame() {
       )
       applyClanSnapshot(result)
       clanError.value = ''
+      if (result.notice) clanNotice.value = result.notice
       if (result.clan) void loadClanChat()
     } catch (error) {
       clanError.value = error instanceof Error ? error.message : 'Clans are unavailable.'
@@ -660,7 +668,7 @@ export function useGame() {
         body: body === undefined ? undefined : JSON.stringify(body),
       }))
       applyClanSnapshot(result)
-      clanNotice.value = successMessage
+      clanNotice.value = result.notice || successMessage
       if (result.clan) await loadClanChat()
       return true
     } catch (error) {
@@ -679,6 +687,7 @@ export function useGame() {
   const leaveClan = () => clanRequest('/api/clans/current', 'DELETE', 'You left the clan.')
   const disbandClan = () => clanRequest('/api/clans/current/disband', 'DELETE', 'The clan was disbanded.')
   const contributeToClan = (item: string, quantity: number) => clanRequest('/api/clans/contribute', 'POST', `Contributed ${quantity} × ${item}.`, { item, quantity })
+  const fightClanRaid = () => clanRequest('/api/clans/raid/attempt', 'POST', 'Clan raid attempt complete.')
 
   async function sendGift(recipient: string, item: string, quantity: number) {
     if (!authToken.value || giftRunning.value) return false
@@ -969,7 +978,7 @@ export function useGame() {
     chatMessages, chatOnline, chatError, clan, clanInvitations, publicClans, clanMessages, clanOnline, clanError, clanChatError, clanNotice, clanActionRunning, giftError, giftNotice, giftRunning,
     auctionListings, auctionError, offlineProgress,
     professionStats, professionXpNeeded, isUnlocked, effectiveDuration, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip,
-    submitAuth, switchAuthMode, loginWithGoogle, submitDisplayName, startBattle, setEncounterMode, changeEnemyTier, gather, craft, cook, eatFood, selectFood, toggleAutoEat, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadClans, createClan, joinClan, inviteClanMember, acceptClanInvitation, declineClanInvitation, leaveClan, disbandClan, contributeToClan, sendGift, loadAuction, createAuction, buyAuction, cancelAuction,
+    submitAuth, switchAuthMode, loginWithGoogle, submitDisplayName, startBattle, setEncounterMode, changeEnemyTier, gather, craft, cook, eatFood, selectFood, toggleAutoEat, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadClans, createClan, joinClan, inviteClanMember, acceptClanInvitation, declineClanInvitation, leaveClan, disbandClan, contributeToClan, fightClanRaid, sendGift, loadAuction, createAuction, buyAuction, cancelAuction,
     displayNameRequired, displayNameDraft, displayNameError, displayNameLoading,
   }
 }
