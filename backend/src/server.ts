@@ -1709,7 +1709,7 @@ app.post('/api/auth/login', async (request, response) => {
       throw error
     }
 
-    if (!playerRow) {
+    if (!playerRow || typeof playerRow.salt !== 'string' || typeof playerRow.password_hash !== 'string') {
       return response.status(401).json({
         error: 'Invalid username or password.',
       })

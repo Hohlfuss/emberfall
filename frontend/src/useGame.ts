@@ -82,6 +82,7 @@ export type OfflineProgress = {
 const API_URL = (
   import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:3000' : window.location.origin)
 ).replace(/\/$/, '')
+const SESSION_STORAGE_KEY = 'emberfall-session-v1'
 
 function apiUrl(path: string): string {
   return `${API_URL}${path}`
@@ -97,6 +98,7 @@ export function useGame() {
   const authError = ref('')
   const authLoading = ref(false)
   const authToken = ref('')
+  const sessionRestoring = ref(true)
   const displayNameRequired = ref(false)
   const displayNameDraft = ref('')
   const displayNameError = ref('')
@@ -128,6 +130,7 @@ export function useGame() {
   let chatTimer: ReturnType<typeof setInterval> | undefined
   let requestRunning = false
   let craftRequestRunning = false
+  let sessionRestoreAttempted = false
 
   const emptyProfessionStats: ProfessionStats = { speed: 0, bonusYieldPercent: 1, critChance: 0, critPower: 1.5 }
   const emptyCombat = { maxHealth: 100, attack: 0, defense: 0, attackSpeed: 1800, recoveryTime: 60000, enemyLoadTime: 2000, passiveRegen: .2 }
@@ -330,6 +333,59 @@ export function useGame() {
     actionError.value = ''
   }
 
+  function saveSession() {
+    if (!authToken.value || !gameId.value) return
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ token: authToken.value, gameId: gameId.value }))
+  }
+
+  function clearSession() {
+    localStorage.removeItem(SESSION_STORAGE_KEY)
+    authToken.value = ''
+    gameId.value = ''
+  }
+
+  function startAuthenticatedServices() {
+    saveSession()
+    startPolling()
+    void loadChat()
+    void loadAuction()
+    clearInterval(chatTimer)
+    chatTimer = setInterval(loadChat, 2000)
+  }
+
+  async function restoreSession() {
+    if (sessionRestoreAttempted) return
+    sessionRestoreAttempted = true
+    try {
+      const stored = localStorage.getItem(SESSION_STORAGE_KEY)
+      if (!stored) return
+      const session = JSON.parse(stored) as { token?: unknown; gameId?: unknown }
+      if (typeof session.token !== 'string' || typeof session.gameId !== 'string') {
+        clearSession()
+        return
+      }
+      authToken.value = session.token
+      gameId.value = session.gameId
+      const response = await fetch(apiUrl(`/api/games/${session.gameId}`), {
+        headers: { Authorization: `Bearer ${session.token}` },
+      })
+      if (response.status === 401 || response.status === 404) {
+        clearSession()
+        authError.value = 'Your saved session expired. Please log in again.'
+        return
+      }
+      const restoredState = await readJson<ServerState>(response)
+      restoredState.events.forEach(event => seenEventIds.add(event.id))
+      applyServerState(restoredState)
+      startAuthenticatedServices()
+    } catch {
+      clearSession()
+      authError.value = 'Your saved session could not be restored. Please log in again.'
+    } finally {
+      sessionRestoring.value = false
+    }
+  }
+
   async function readJson<T>(response: Response): Promise<T> {
     const payload = await response.json() as T & { error?: string }
     if (!response.ok) throw new Error(payload.error || 'The server rejected the request.')
@@ -442,9 +498,11 @@ export function useGame() {
       if (!config.value) {
         await loadConfig()
       }
+      await restoreSession()
     } catch {
       serverOnline.value = false
       backendError.value = 'Backend offline. Start the server to play.'
+      sessionRestoring.value = false
     }
   }
 
@@ -477,11 +535,9 @@ export function useGame() {
       offlineProgress.value = authMode.value === 'login' ? result.offlineProgress || null : null
       result.state.events.forEach(event => seenEventIds.add(event.id))
       applyServerState(result.state)
-      startPolling()
-      void loadChat()
-      void loadAuction()
-      clearInterval(chatTimer)
-      chatTimer = setInterval(loadChat, 2000)
+      authPassword.value = ''
+      authConfirmPassword.value = ''
+      startAuthenticatedServices()
     } catch (error) {
       authError.value = error instanceof Error ? error.message : 'Authentication failed.'
     } finally { authLoading.value = false }
@@ -515,11 +571,7 @@ export function useGame() {
       if (result.state) {
         result.state.events.forEach(event => seenEventIds.add(event.id))
         applyServerState(result.state)
-        startPolling()
-        void loadChat()
-        void loadAuction()
-        clearInterval(chatTimer)
-        chatTimer = setInterval(loadChat, 2000)
+        startAuthenticatedServices()
       }
     } catch (error) {
       authError.value = error instanceof Error ? error.message : 'Google sign-in failed.'
@@ -543,11 +595,7 @@ export function useGame() {
       displayNameDraft.value = result.displayName
       result.state.events.forEach(event => seenEventIds.add(event.id))
       applyServerState(result.state)
-      startPolling()
-      void loadChat()
-      void loadAuction()
-      clearInterval(chatTimer)
-      chatTimer = setInterval(loadChat, 2000)
+      startAuthenticatedServices()
     } catch (error) {
       displayNameError.value = error instanceof Error ? error.message : 'Could not save display name.'
     } finally {
@@ -561,7 +609,7 @@ export function useGame() {
     try {
       const response = await fetch(apiUrl('/api/games/' + gameId.value), { headers: { Authorization: 'Bearer ' + authToken.value } })
       if (response.status === 401 || response.status === 404) {
-        state.value = null; gameId.value = ''; authToken.value = ''; authError.value = 'The backend restarted. Register or log in again.'; return
+        state.value = null; clearSession(); authError.value = 'Your session expired. Please log in again.'; return
       }
       applyServerState(await readJson<ServerState>(response))
     } catch {
@@ -637,7 +685,7 @@ export function useGame() {
   })
 
   return {
-    tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authLoading, serverOnline, backendError, playerName, playerTitle, gold, level, xp, xpNeeded, message, player, combatStats, dps,
+    tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authLoading, sessionRestoring, serverOnline, backendError, playerName, playerTitle, gold, level, xp, xpNeeded, message, player, combatStats, dps,
     enemyTier, highestEnemyTier, enemy, battleStarted, autoBattle, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
     heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
     woods, rocks, allResources, rareMaterials, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, googleClientId, professions, jobs, inventory, sellPrices, resourceMastery,

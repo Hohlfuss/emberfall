@@ -51,6 +51,8 @@ After deployment:
 
 The backend verifies each Google ID token for the configured client ID, requires a verified email, and identifies returning players by Google's stable account ID.
 
+Players can also register and log in with a username and password. The browser stores only the issued game session token and game ID in `localStorage`, so refreshing the page restores the session without retaining the player's password.
+
 ## Local development
 
 Create `backend/.env` with `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, and `GOOGLE_CLIENT_ID`. Run `npm run dev` in both `backend` and `frontend`. The frontend defaults to `http://localhost:3000` while running in Vite development mode.
