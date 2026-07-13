@@ -1,7 +1,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { CookingRecipe, Gear, GearSlot, Page, ProfessionStats, RareMaterial, Recipe, Resource, Skill } from './gameData'
 
-type ShopUpgradeId = 'medic' | 'scouting' | 'training' | 'fortitude' | 'autoBattle'
+type ShopUpgradeId = 'medic' | 'scouting' | 'training' | 'fortitude' | 'autoBattle' | 'autoEat' | 'healingPower'
 type GameEvent = { id: number; kind: 'achievement' | 'critical' | 'level' | 'rare' | 'yield' | 'worker'; title: string; detail: string }
 type Achievement = { id: string; name: string; description: string; goal: number; reward: number; icon: string; progress: number; unlocked: boolean; titleReward?: string; equipped: boolean }
 type StorePath = { id: string; name: string; icon: string; items: string[]; prices: number[] }
@@ -32,6 +32,7 @@ type ServerState = {
   enemyTier: number; highestEnemyTier: number
   enemy: { name: string; archetype: string; health: number; maxHealth: number; attack: number; defense: number; attackSpeed: number; xp: number; gold: number }
   battleStarted: boolean; autoBattle: boolean; recovering: boolean; enemyLoading: boolean; recoveryRemaining: number; enemyLoadRemaining: number
+  selectedFood: string | null; autoEat: boolean; autoEatThreshold: number; autoEatCooldownRemaining: number; foodHealingPowerBonus: number; foodHealingValues: Record<string, number>
   professions: Record<Skill, { level: number; xp: number; xpNeeded: number }>
   craftingProfession: { level: number; xp: number; xpNeeded: number }
   craftingStats: { speed: number; conservationChance: number; bonusOutputChance: number; totalCrafts: number; materialsSaved: number; bonusOutputs: number }
@@ -162,6 +163,12 @@ export function useGame() {
   const enemy = computed(() => state.value?.enemy || emptyEnemy)
   const battleStarted = computed(() => Boolean(state.value?.battleStarted))
   const autoBattle = computed(() => Boolean(state.value?.autoBattle))
+  const selectedFood = computed(() => state.value?.selectedFood || null)
+  const autoEat = computed(() => Boolean(state.value?.autoEat))
+  const autoEatThreshold = computed(() => state.value?.autoEatThreshold ?? 50)
+  const autoEatCooldownRemaining = computed(() => state.value?.autoEatCooldownRemaining || 0)
+  const foodHealingPowerBonus = computed(() => state.value?.foodHealingPowerBonus || 0)
+  const foodHealingValues = computed(() => state.value?.foodHealingValues || {})
   const recovering = computed(() => Boolean(state.value?.recovering))
   const enemyLoading = computed(() => Boolean(state.value?.enemyLoading))
   const recoveryRemaining = computed(() => state.value?.recoveryRemaining || 0)
@@ -202,7 +209,7 @@ export function useGame() {
   const equipment = computed(() => state.value?.equipment || emptyEquipment)
   const ownedGear = computed(() => state.value?.ownedGear || [])
   const gearSellPrices = computed(() => state.value?.gearSellPrices || {})
-  const shopUpgrades = computed(() => state.value?.shopUpgrades || { medic: 0, scouting: 0, training: 0, fortitude: 0, autoBattle: 0 })
+  const shopUpgrades = computed(() => state.value?.shopUpgrades || { medic: 0, scouting: 0, training: 0, fortitude: 0, autoBattle: 0, autoEat: 0, healingPower: 0 })
   const achievements = computed(() => state.value?.achievements || [])
   const factionDefinitions = computed(() => config.value?.factionDefinitions || [])
   const alliedFaction = computed(() => state.value?.alliedFaction || null)
@@ -245,6 +252,13 @@ export function useGame() {
     ...recipe,
     progress: state.value?.cooking?.id === recipe.id ? state.value.cooking.progress : 0,
     remaining: state.value?.cooking?.id === recipe.id ? state.value.cooking.remaining : undefined,
+  })))
+  const battleFoods = computed(() => cookingRecipeList.value.map(recipe => ({
+    item: recipe.outputItem,
+    name: recipe.name,
+    icon: recipe.icon,
+    healing: foodHealingValues.value[recipe.outputItem] || recipe.healing,
+    owned: inventory.value[recipe.outputItem] || 0,
   })))
 
   const storeListings = computed(() => storePaths.value.map(path => {
@@ -688,6 +702,8 @@ export function useGame() {
     finally { cookingRequestRunning = false }
   }
   function eatFood(item: string) { void sendAction({ type: 'eatFood', item }) }
+  function selectFood(item: string | null) { void sendAction({ type: 'setSelectedFood', item }) }
+  function toggleAutoEat(enabled: boolean) { void sendAction({ type: 'toggleAutoEat', enabled }) }
   function assignWorker(resource: Resource, change: number) { void sendAction({ type: 'assignWorker', resourceId: resource.id, change }) }
   function buyWorker() { void sendAction({ type: 'buyWorker' }) }
   function buyShopUpgrade(upgrade: ShopUpgradeDetail) { void sendAction({ type: 'buyUpgrade', upgradeId: upgrade.id }) }
@@ -716,16 +732,16 @@ export function useGame() {
 
   return {
     tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authLoading, sessionRestoring, serverOnline, backendError, playerName, playerTitle, gold, level, xp, xpNeeded, message, player, combatStats, dps,
-    enemyTier, highestEnemyTier, enemy, battleStarted, autoBattle, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
+    enemyTier, highestEnemyTier, enemy, battleStarted, autoBattle, selectedFood, autoEat, autoEatThreshold, autoEatCooldownRemaining, foodHealingPowerBonus, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
     heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
     woods, rocks, fishingSpots, farmingPlots, allResources, rareMaterials, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, googleClientId, professions, jobs, inventory, sellPrices, resourceMastery,
     workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId, craftingProfession, craftingStats, cookingId, cookingProfession, cookingStats, factionDefinitions, alliedFaction, factions, dailyObjectives, dailyResetAt, metalDetector,
-    craftingRecipes, cookingRecipeList, recipeLevels, storeListings, materialGroups, toasts,
+    craftingRecipes, cookingRecipeList, battleFoods, foodHealingValues, recipeLevels, storeListings, materialGroups, toasts,
     leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
     chatMessages, chatOnline, chatError,
     auctionListings, auctionError, offlineProgress,
     professionStats, professionXpNeeded, isUnlocked, effectiveDuration, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip,
-    submitAuth, switchAuthMode, loginWithGoogle, submitDisplayName, startBattle, changeEnemyTier, gather, craft, cook, eatFood, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
+    submitAuth, switchAuthMode, loginWithGoogle, submitDisplayName, startBattle, changeEnemyTier, gather, craft, cook, eatFood, selectFood, toggleAutoEat, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
     displayNameRequired, displayNameDraft, displayNameError, displayNameLoading,
   }
 }

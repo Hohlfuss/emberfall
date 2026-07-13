@@ -7,6 +7,7 @@ import AuctionHouse from './AuctionHouse.vue'
 import CraftingPage from './CraftingPage.vue'
 import CookingPage from './CookingPage.vue'
 import AutoBattleControl from './AutoBattleControl.vue'
+import BattleFoodControl from './BattleFoodControl.vue'
 import CraftingInventoryStats from './CraftingInventoryStats.vue'
 import SalvageBuyer from './SalvageBuyer.vue'
 import FactionsPage from './FactionsPage.vue'
@@ -17,19 +18,19 @@ import GoogleLoginButton from './GoogleLoginButton.vue'
 
 const {
   tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authLoading, sessionRestoring, serverOnline, backendError, googleClientId, playerName, playerTitle, gold, level, xp, xpNeeded, message, player, combatStats, dps,
-  enemyTier, highestEnemyTier, enemy, battleStarted, autoBattle, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
+  enemyTier, highestEnemyTier, enemy, battleStarted, autoBattle, selectedFood, autoEat, autoEatThreshold, autoEatCooldownRemaining, foodHealingPowerBonus, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
   heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
   woods, rocks, fishingSpots, farmingPlots, allResources, rareMaterials, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, sellPrices, resourceMastery,
   workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId,
   craftingProfession, craftingStats, cookingId, cookingProfession, cookingStats,
   factionDefinitions, alliedFaction, factions,
   dailyObjectives, dailyResetAt, metalDetector,
-  craftingRecipes, cookingRecipeList, recipeLevels, storeListings, materialGroups, toasts,
+  craftingRecipes, cookingRecipeList, battleFoods, foodHealingValues, recipeLevels, storeListings, materialGroups, toasts,
   leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
   chatMessages, chatOnline, chatError,
   auctionListings, auctionError, offlineProgress,
   professionStats, professionXpNeeded, isUnlocked, effectiveDuration, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip,
-  submitAuth, switchAuthMode, loginWithGoogle, submitDisplayName, startBattle, changeEnemyTier, gather, craft, cook, eatFood, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
+  submitAuth, switchAuthMode, loginWithGoogle, submitDisplayName, startBattle, changeEnemyTier, gather, craft, cook, eatFood, selectFood, toggleAutoEat, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadAuction, createAuction, buyAuction, cancelAuction,
   displayNameRequired, displayNameDraft, displayNameError, displayNameLoading,
 } = useGame()
 
@@ -79,6 +80,7 @@ watch(playerName, name => {
       <div class="versus"><span></span><b>VS</b><span></span></div>
       <article class="fighter enemy" :class="{ 'enemy-loading': enemyLoading }"><div class="fighter-info"><template v-if="enemyLoading"><div class="eyebrow danger">NEXT ENCOUNTER · TIER {{ enemyTier }}</div><h2>Loading enemy...</h2><p class="title">Preparing a new randomized opponent</p><div class="bar-label"><span>ENEMY LOAD PROGRESS</span><strong>{{ (enemyLoadRemaining / 1000).toFixed(1) }}s</strong></div><div class="meter health enemy-load-bar"><i :style="{ width: enemyLoadPercent }"></i></div><div class="loading-pips"><i></i><i></i><i></i></div></template><template v-else><div class="eyebrow danger">TIER {{ enemyTier }} · {{ enemy.archetype }}</div><h2>{{ enemy.name }}</h2><p class="title">Stats and archetype reroll each encounter</p><div class="bar-label"><span>HEALTH</span><strong>{{ Math.max(0, enemy.health) }} / {{ enemy.maxHealth }}</strong></div><div class="meter health enemy-bar"><i :style="{ width: enemyHealth }"></i></div><div class="stats"><div><span>Attack</span><strong>{{ enemy.attack }}</strong></div><div><span>Defense</span><strong>{{ enemy.defense }}</strong></div><div><span>Attack speed</span><strong>{{ (enemy.attackSpeed / 1000).toFixed(2) }}s</strong></div></div></template></div><div class="portrait enemy-portrait" :class="{ loading: enemyLoading }">{{ enemyLoading ? '···' : '☠' }}</div></article>
       <footer class="battle-controls"><button class="primary" @click="startBattle" :disabled="recovering || enemyLoading">{{ battleButtonLabel }}</button><small v-if="!enemyLoading">Tier reward: {{ enemy.xp }} XP · {{ enemy.gold }} gold · Victory unlocks the next tier</small><small>Death recovery and next-enemy load time can both be upgraded</small></footer>
+      <BattleFoodControl :foods="battleFoods" :selected-food="selectedFood" :health="player.health" :max-health="combatStats.maxHealth" :recovering="recovering" :auto-eat="autoEat" :auto-eat-unlocked="shopUpgrades.autoEat > 0" :auto-eat-threshold="autoEatThreshold" :auto-eat-cooldown-remaining="autoEatCooldownRemaining" :healing-power-bonus="foodHealingPowerBonus" @select="selectFood" @eat="eatFood" @toggle-auto-eat="toggleAutoEat" />
     </section>
 
     <section v-else-if="page === 'woodcutting' || page === 'mining' || page === 'fishing' || page === 'farming'" class="page-content">
@@ -91,7 +93,7 @@ watch(playerName, name => {
 
     <CraftingPage v-else-if="page === 'crafting'" v-model:selected-id="craftingRecipeId" v-model:view="craftingRecipeView" v-model:trail="craftingRecipeTrail" :recipes="craftingRecipes" :inventory="inventory" :gear-catalog="gearCatalog" :equipment="equipment" :resources="allResources" :rare-materials="rareMaterials" :recipe-levels="recipeLevels" :crafting-id="craftingId" :profession="craftingProfession" :stats="craftingStats" @craft="craft" @navigate="page = $event" />
 
-    <CookingPage v-else-if="page === 'cooking'" :recipes="cookingRecipeList" :inventory="inventory" :cooking-id="cookingId" :profession="cookingProfession" :stats="cookingStats" :health="player.health" :max-health="combatStats.maxHealth" :recovering="recovering" @cook="cook" @eat="eatFood" />
+    <CookingPage v-else-if="page === 'cooking'" :recipes="cookingRecipeList" :inventory="inventory" :cooking-id="cookingId" :profession="cookingProfession" :stats="cookingStats" :healing-values="foodHealingValues" :health="player.health" :max-health="combatStats.maxHealth" :recovering="recovering" @cook="cook" @eat="eatFood" />
 
     <MetalDetectorPage v-else-if="page === 'metal detector'" :detector="metalDetector" :gold="gold" @reveal="revealDetectorTile" @drill="startDetectorDrill" @relocate="newDetectorSite" />
 

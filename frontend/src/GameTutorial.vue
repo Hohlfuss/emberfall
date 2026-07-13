@@ -7,8 +7,8 @@ const step = ref(0)
 const steps = [
   {
     icon: '⚔', eyebrow: 'STEP 1 · BATTLE', title: 'Begin in the arena',
-    body: 'Fight enemies to earn player XP and gold. Victories unlock higher enemy tiers, while defeat starts a short recovery.',
-    tip: 'Your first tier-3 victory also reveals the Metal Detector activity.',
+    body: 'Fight enemies to earn player XP and gold. Victories unlock higher tiers, while defeat starts recovery and removes 10% of your current gold.',
+    tip: 'Cook healing food for battle. The shop can unlock Auto-Eat and improve every meal’s healing power.',
   },
   {
     icon: '🎣', eyebrow: 'STEP 2 · GATHERING', title: 'Gather from land and water',

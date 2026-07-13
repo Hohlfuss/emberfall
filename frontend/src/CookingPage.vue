@@ -10,6 +10,7 @@ const props = defineProps<{
   cookingId: string
   profession: { level: number; xp: number; xpNeeded: number }
   stats: { speed: number; conservationChance: number; bonusDishChance: number; totalCooked: number; ingredientsSaved: number; bonusDishes: number }
+  healingValues: Record<string, number>
   health: number
   maxHealth: number
   recovering: boolean
@@ -37,6 +38,10 @@ function formatDuration(seconds: number) {
 
 function canCook(recipe: CookingRecipe) {
   return !props.cookingId && props.profession.level >= recipe.tier && !missingIngredients(recipe).length
+}
+
+function effectiveHealing(recipe: CookingRecipe) {
+  return props.healingValues[recipe.outputItem] || recipe.healing
 }
 
 function cookingLabel(recipe: DisplayRecipe) {
@@ -97,7 +102,7 @@ function cookingLabel(recipe: DisplayRecipe) {
         <header>
           <div class="dish-icon">{{ recipe.icon }}</div>
           <div><span>TIER {{ recipe.tier }} · LEVEL {{ recipe.tier }}</span><h3>{{ recipe.name }}</h3></div>
-          <strong class="healing">+{{ recipe.healing }} HP</strong>
+          <strong class="healing">+{{ effectiveHealing(recipe) }} HP</strong>
         </header>
         <p>{{ recipe.description }}</p>
 
@@ -116,10 +121,10 @@ function cookingLabel(recipe: DisplayRecipe) {
           <button
             type="button"
             :disabled="!(inventory[recipe.outputItem] || 0) || health >= maxHealth || recovering"
-            :title="recovering ? 'Finish recovering first' : health >= maxHealth ? 'Health is already full' : `Restore up to ${recipe.healing} health`"
+            :title="recovering ? 'Finish recovering first' : health >= maxHealth ? 'Health is already full' : `Restore up to ${effectiveHealing(recipe)} health`"
             @click="emit('eat', recipe.outputItem)"
           >
-            {{ health >= maxHealth ? 'FULL HEALTH' : recovering ? 'RECOVERING' : `EAT · +${recipe.healing} HP` }}
+            {{ health >= maxHealth ? 'FULL HEALTH' : recovering ? 'RECOVERING' : `EAT · +${effectiveHealing(recipe)} HP` }}
           </button>
         </footer>
       </article>
