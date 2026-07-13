@@ -12,6 +12,7 @@ export type FactionDefinition = { id: FactionId; name: string; icon: string; unl
 type GameConfig = {
   woods: Resource[]
   rocks: Resource[]
+  fishingSpots: Resource[]
   allResources: Resource[]
   rareMaterials: RareMaterial[]
   gearCatalog: Record<string, Gear>
@@ -49,7 +50,7 @@ type ServerState = {
   metalDetector: MetalDetectorState
 }
 type Toast = { id: number; kind: GameEvent['kind']; title: string; detail: string }
-type LeaderboardCategory = 'level' | 'gold' | 'woodcutting' | 'mining' | 'clicks' | 'kills' | 'gathered' | 'crafted'
+type LeaderboardCategory = 'level' | 'gold' | 'woodcutting' | 'mining' | 'fishing' | 'clicks' | 'kills' | 'gathered' | 'crafted'
 type LeaderboardEntry = {
   rank: number
   username: string
@@ -89,7 +90,7 @@ function apiUrl(path: string): string {
 }
 
 export function useGame() {
-  const allTabs: Page[] = ['battle', 'woodcutting', 'mining', 'crafting', 'metal detector', 'workers', 'inventory', 'achievements', 'factions', 'auction', 'high scores', 'shop']
+  const allTabs: Page[] = ['battle', 'woodcutting', 'mining', 'fishing', 'crafting', 'metal detector', 'workers', 'inventory', 'achievements', 'factions', 'auction', 'high scores', 'shop']
   const page = ref<Page>('battle')
   const authMode = ref<'login' | 'register'>('login')
   const authUsername = ref('')
@@ -135,7 +136,7 @@ export function useGame() {
   const emptyProfessionStats: ProfessionStats = { speed: 0, bonusYieldPercent: 1, critChance: 0, critPower: 1.5 }
   const emptyCombat = { maxHealth: 100, attack: 0, defense: 0, attackSpeed: 1800, recoveryTime: 60000, enemyLoadTime: 2000, passiveRegen: .2 }
   const emptyEnemy = { name: 'Loading...', archetype: '', health: 0, maxHealth: 1, attack: 0, defense: 0, attackSpeed: 0, xp: 0, gold: 0 }
-  const emptyEquipment = { weapon: undefined, helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: undefined, hatchet: undefined } satisfies Record<GearSlot, string | undefined>
+  const emptyEquipment = { weapon: undefined, helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: undefined, hatchet: undefined, fishingRod: undefined } satisfies Record<GearSlot, string | undefined>
 
   const playerName = computed(() => state.value?.playerName || '')
   const playerTitle = computed(() => state.value?.playerTitle || 'Aspiring Adventurer')
@@ -172,6 +173,7 @@ export function useGame() {
 
   const woods = computed(() => config.value?.woods || [])
   const rocks = computed(() => config.value?.rocks || [])
+  const fishingSpots = computed(() => config.value?.fishingSpots || [])
   const allResources = computed(() => config.value?.allResources || [])
   const rareMaterials = computed(() => config.value?.rareMaterials || [])
   const gearCatalog = computed(() => config.value?.gearCatalog || {})
@@ -180,7 +182,7 @@ export function useGame() {
   const storePaths = computed(() => config.value?.storePaths || [])
   const shopUpgradeDetails = computed(() => config.value?.shopUpgradeDetails || [])
   const googleClientId = computed(() => config.value?.googleClientId || '')
-  const professions = computed(() => state.value?.professions || { woodcutting: { level: 1, xp: 0, xpNeeded: 61 }, mining: { level: 1, xp: 0, xpNeeded: 61 } })
+  const professions = computed(() => state.value?.professions || { woodcutting: { level: 1, xp: 0, xpNeeded: 61 }, mining: { level: 1, xp: 0, xpNeeded: 61 }, fishing: { level: 1, xp: 0, xpNeeded: 61 } })
   const jobs = computed(() => state.value?.jobs || {})
   const inventory = computed(() => state.value?.inventory || {})
   const sellPrices = computed(() => state.value?.sellPrices || {})
@@ -242,17 +244,19 @@ export function useGame() {
     const logNames = new Set(woods.value.map(resource => resource.item))
     const rockNames = new Set(rocks.value.filter(resource => resource.family === 'rock').map(resource => resource.item))
     const oreNames = new Set(rocks.value.filter(resource => resource.family === 'ore').map(resource => resource.item))
+    const fishNames = new Set(fishingSpots.value.map(resource => resource.item))
     const owned = Object.entries(inventory.value).filter(([, count]) => count > 0)
     return [
       { name: 'Logs', icon: '🌲', items: owned.filter(([item]) => logNames.has(item)) },
       { name: 'Rocks', icon: '🪨', items: owned.filter(([item]) => rockNames.has(item)) },
       { name: 'Ores', icon: '⛏️', items: owned.filter(([item]) => oreNames.has(item)) },
-      { name: 'Refined & rare', icon: '💎', items: owned.filter(([item]) => !logNames.has(item) && !rockNames.has(item) && !oreNames.has(item)) },
+      { name: 'Fish', icon: '🐟', items: owned.filter(([item]) => fishNames.has(item)) },
+      { name: 'Refined & rare', icon: '💎', items: owned.filter(([item]) => !logNames.has(item) && !rockNames.has(item) && !oreNames.has(item) && !fishNames.has(item)) },
     ]
   })
 
   function formatBonus(stat: string, amount: number) {
-    const labels: Record<string, string> = { attack: 'Attack', defense: 'Defense', maxHealth: 'Health', attackSpeed: 'Attack speed', woodSpeed: 'WC speed', miningSpeed: 'Mining speed', woodYield: 'WC yield', miningYield: 'Mining yield', woodBonusYieldPercent: 'WC bonus yield', miningBonusYieldPercent: 'Mining bonus yield', woodCrit: 'WC crit chance', miningCrit: 'Mining crit chance', critPower: 'Crit power', recoverySpeed: 'Recovery time', encounterSpeed: 'Enemy load time' }
+    const labels: Record<string, string> = { attack: 'Attack', defense: 'Defense', maxHealth: 'Health', attackSpeed: 'Attack speed', woodSpeed: 'WC speed', miningSpeed: 'Mining speed', fishingSpeed: 'Fishing speed', woodYield: 'WC yield', miningYield: 'Mining yield', fishingYield: 'Fishing yield', woodBonusYieldPercent: 'WC bonus yield', miningBonusYieldPercent: 'Mining bonus yield', fishingBonusYieldPercent: 'Fishing bonus yield', woodCrit: 'WC crit chance', miningCrit: 'Mining crit chance', fishingCrit: 'Fishing crit chance', critPower: 'Crit power', recoverySpeed: 'Recovery time', encounterSpeed: 'Enemy load time' }
     const percent = stat.includes('Speed') && stat !== 'attackSpeed' || stat.includes('Crit') || stat.includes('BonusYield')
     const value = stat === 'attackSpeed' || stat === 'recoverySpeed' || stat === 'encounterSpeed' ? '-' + amount + 'ms' : stat === 'critPower' ? '+' + amount + '×' : '+' + amount + (percent ? '%' : '')
     return value + ' ' + (labels[stat] || stat)
@@ -296,7 +300,7 @@ export function useGame() {
       `Base yield: 1`,
       `Bonus yield: ${stats.bonusYieldPercent.toFixed(1)}% (${guaranteedYield} guaranteed${remainderChance ? `, plus a ${remainderChance.toFixed(1)}% chance for ${guaranteedYield + 1}` : ''})`,
       `Mastery: ${mastery} (+${Math.floor(mastery / 10)}% speed)`,
-      `Critical harvest: ${stats.critChance.toFixed(1)}% chance to run at ${stats.critPower.toFixed(2)}× speed; the bonus-yield roll is unchanged.`,
+      `Critical ${resource.skill === 'fishing' ? 'catch' : 'harvest'}: ${stats.critChance.toFixed(1)}% chance to run at ${stats.critPower.toFixed(2)}× speed; the bonus-yield roll is unchanged.`,
       `Rare material chance: ${rareChance.toFixed(2)}% (${secondaryDrops || 'none'})`,
     ].join('\n')
   }
@@ -688,7 +692,7 @@ export function useGame() {
     tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authLoading, sessionRestoring, serverOnline, backendError, playerName, playerTitle, gold, level, xp, xpNeeded, message, player, combatStats, dps,
     enemyTier, highestEnemyTier, enemy, battleStarted, autoBattle, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
     heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
-    woods, rocks, allResources, rareMaterials, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, googleClientId, professions, jobs, inventory, sellPrices, resourceMastery,
+    woods, rocks, fishingSpots, allResources, rareMaterials, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, googleClientId, professions, jobs, inventory, sellPrices, resourceMastery,
     workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId, craftingProfession, craftingStats, factionDefinitions, alliedFaction, factions, dailyObjectives, dailyResetAt, metalDetector,
     craftingRecipes, recipeLevels, storeListings, materialGroups, toasts,
     leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,

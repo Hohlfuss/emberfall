@@ -7,7 +7,7 @@ import { OAuth2Client } from 'google-auth-library'
 
 loadEnv({ path: fileURLToPath(new URL('../.env', import.meta.url)) })
 import {
-  allResources, GAME_PACE_MULTIPLIER, gearCatalog, rareMaterials, recipes as recipeData, rocks, slotLabels, woods,
+  allResources, fishingSpots, GAME_PACE_MULTIPLIER, gearCatalog, rareMaterials, recipes as recipeData, rocks, slotLabels, woods,
   type Bonuses, type GearSlot, type ProfessionStats, type Recipe, type Resource, type Skill,
 } from '../../frontend/src/gameData.ts'
 import { rollGatherYield } from './gathering.ts'
@@ -40,6 +40,10 @@ const leaderboardCategories = {
   mining: {
     column: 'mining_level',
     label: 'Mining Level',
+  },
+  fishing: {
+    column: 'fishing_level',
+    label: 'Fishing Level',
   },
   clicks: {
     column: 'total_clicks',
@@ -80,7 +84,7 @@ type Enemy = { name: string; archetype: string; health: number; maxHealth: numbe
 type ShopUpgrade = 'medic' | 'scouting' | 'training' | 'fortitude' | 'autoBattle'
 type EventKind = 'achievement' | 'critical' | 'level' | 'rare' | 'yield' | 'worker'
 type GameEvent = { id: number; kind: EventKind; title: string; detail: string }
-type AchievementKind = 'level' | 'kills' | 'deaths' | 'tier' | 'gathered' | 'crafted' | 'workers' | 'woodLevel' | 'mineLevel' | 'gear' | 'actions' | 'goldEarned' | 'goldSpent'
+type AchievementKind = 'level' | 'kills' | 'deaths' | 'tier' | 'gathered' | 'crafted' | 'workers' | 'woodLevel' | 'mineLevel' | 'fishLevel' | 'gear' | 'actions' | 'goldEarned' | 'goldSpent'
 type AchievementDefinition = { id: string; name: string; description: string; kind: AchievementKind; goal: number; reward: number; icon: string; titleReward?: string }
 type GatherJob = { resourceId: string; startedAt: number; endsAt: number; critical: boolean; duration: number }
 type CraftJob = { recipeId: string; startedAt: number; endsAt: number; duration: number; receipt?: string }
@@ -199,6 +203,7 @@ const dailyObjectivePool = [
 const storePaths = [
   { id: 'hatchets', name: 'Hatchets', icon: '🪓', items: ['pineHatchet', 'oakHatchet', 'mapleHatchet', 'yewHatchet'], prices: [175, 1800, 6500, 16000] },
   { id: 'pickaxes', name: 'Pickaxes', icon: '⛏️', items: ['copperPickaxe', 'ironPickaxe', 'silverPickaxe', 'mythrilPickaxe'], prices: [200, 2000, 9000, 32000] },
+  { id: 'fishingRods', name: 'Fishing rods', icon: '🎣', items: ['pineFishingRod', 'ironFishingRod', 'silverFishingRod', 'mythrilFishingRod'], prices: [175, 1800, 9000, 32000] },
   { id: 'weapons', name: 'Weapons', icon: '⚔️', items: ['bronzeSword', 'ironSword', 'silverSaber'], prices: [250, 2400, 18000] },
   { id: 'helmets', name: 'Helmets', icon: '🪖', items: ['copperHelm', 'ironHelm', 'obsidianHelm'], prices: [275, 2600, 20000] },
   { id: 'chestArmor', name: 'Chest armor', icon: '🥋', items: ['copperChest', 'ironChest', 'obsidianChest'], prices: [400, 3600, 28000] },
@@ -231,6 +236,7 @@ const achievementDefinitions: AchievementDefinition[] = [
   { id: 'crew', name: 'A Small Crew', description: 'Own 3 workers.', kind: 'workers', goal: 3, reward: 250, icon: '♟️' },
   { id: 'lumberFive', name: 'Forest Adept', description: 'Reach woodcutting level 5.', kind: 'woodLevel', goal: 5, reward: 100, icon: '🌲' },
   { id: 'mineFive', name: 'Deep Delver', description: 'Reach mining level 5.', kind: 'mineLevel', goal: 5, reward: 100, icon: '💎' },
+  { id: 'fishFive', name: 'River Regular', description: 'Reach fishing level 5.', kind: 'fishLevel', goal: 5, reward: 100, icon: '🎣' },
   { id: 'gearFive', name: 'Well Equipped', description: 'Own 5 crafted or starter items.', kind: 'gear', goal: 5, reward: 100, icon: '🛡️' },
   { id: 'levelTen', name: 'Veteran Adventurer', description: 'Reach player level 10.', kind: 'level', goal: 10, reward: 400, icon: '🏅' },
   { id: 'levelFifteen', name: 'Battle-Hardened', description: 'Reach player level 15.', kind: 'level', goal: 15, reward: 700, icon: '🗡️' },
@@ -266,6 +272,9 @@ const achievementDefinitions: AchievementDefinition[] = [
   { id: 'mineTen', name: 'Stone Savant', description: 'Reach mining level 10.', kind: 'mineLevel', goal: 10, reward: 400, icon: '⛏️' },
   { id: 'mineTwenty', name: 'Heart of the Mountain', description: 'Reach mining level 20.', kind: 'mineLevel', goal: 20, reward: 1200, icon: '🏔️', titleReward: 'Mountainheart' },
   { id: 'mineFifty', name: 'Below the Roots', description: 'Reach mining level 50.', kind: 'mineLevel', goal: 50, reward: 8000, icon: '💠', titleReward: 'Deep-Soul' },
+  { id: 'fishTen', name: 'Seasoned Angler', description: 'Reach fishing level 10.', kind: 'fishLevel', goal: 10, reward: 400, icon: '🐟' },
+  { id: 'fishTwenty', name: 'Master of Tides', description: 'Reach fishing level 20.', kind: 'fishLevel', goal: 20, reward: 1200, icon: '🌊', titleReward: 'Tidecaller' },
+  { id: 'fishFifty', name: 'The Endless Sea', description: 'Reach fishing level 50.', kind: 'fishLevel', goal: 50, reward: 8000, icon: '🐉', titleReward: 'Lord of the Deep' },
   { id: 'gearTen', name: 'Walking Arsenal', description: 'Own 10 pieces of equipment.', kind: 'gear', goal: 10, reward: 900, icon: '🛡️' },
   { id: 'gearFifteen', name: 'Relic Keeper', description: 'Own 15 pieces of equipment.', kind: 'gear', goal: 15, reward: 2500, icon: '⚜️', titleReward: 'Keeper of Relics' },
   { id: 'deathsTwentyFive', name: 'Still Standing', description: 'Survive 25 defeats.', kind: 'deaths', goal: 25, reward: 1000, icon: '🩹', titleReward: 'The Undying' },
@@ -386,7 +395,17 @@ function deserializeGame(value: unknown): Game {
 
     craftingProfession: stored.craftingProfession ?? { level: 1, xp: 0 },
     autoBattle: stored.autoBattle ?? false,
-    unlockedGear: stored.unlockedGear ?? [...(stored.ownedGear ?? [])],
+    ownedGear: [...new Set([...(stored.ownedGear ?? []), 'wornFishingRod'])],
+    unlockedGear: [...new Set([...(stored.unlockedGear ?? stored.ownedGear ?? []), 'wornFishingRod'])],
+    equipment: {
+      ...stored.equipment,
+      fishingRod: stored.equipment?.fishingRod ?? 'wornFishingRod',
+    },
+    professions: {
+      woodcutting: stored.professions?.woodcutting ?? { level: 1, xp: 0 },
+      mining: stored.professions?.mining ?? { level: 1, xp: 0 },
+      fishing: stored.professions?.fishing ?? { level: 1, xp: 0 },
+    },
     alliedFaction: stored.alliedFaction ?? null,
     factions: stored.factions ?? { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } },
     daily: stored.daily ?? createDailyState(stored.lifetime ?? createLifetimeStats()),
@@ -444,6 +463,9 @@ async function saveGame(
 
         mining_level:
           game.professions.mining.level,
+
+        fishing_level:
+          game.professions.fishing.level,
 
         total_clicks: game.lifetime.totalClicks,
         monsters_killed: game.lifetime.kills,
@@ -541,7 +563,7 @@ function combatStats(game: Game) {
 function professionStats(game: Game, skill: Skill): ProfessionStats {
   const profession = game.professions[skill]
   const bonuses = totalBonuses(game)
-  const prefix = skill === 'woodcutting' ? 'wood' : 'mining'
+  const prefix = skill === 'woodcutting' ? 'wood' : skill
   return {
     speed: Math.min(180, (profession.level - 1) * 1.25 + (bonuses[`${prefix}Speed` as keyof Bonuses] || 0)),
     // Bonus yield starts low, grows slowly, and remains uncapped for future upgrades.
@@ -624,7 +646,7 @@ function rollDetectorReward(game: Game): DetectorReward {
   }
 
   if (category < .76) {
-    const resource = randomEntry(allResources)!
+    const resource = randomEntry(allResources.filter(candidate => candidate.family !== 'fish'))!
     const amount = Math.max(1, Math.floor((1 + Math.random()) * Math.sqrt(scale)))
     addDetectorItem(game, resource.item, amount)
     return { kind: 'material', label: `${amount} × ${resource.item}`, detail: `Random ${resource.family} material`, icon: resource.icon }
@@ -648,7 +670,7 @@ function achievementProgress(game: Game, achievement: AchievementDefinition) {
   const values: Record<AchievementKind, number> = {
     level: game.level, kills: game.lifetime.kills, deaths: game.lifetime.deaths, tier: game.highestEnemyTier,
     gathered: game.lifetime.gathered, crafted: game.lifetime.crafted, workers: game.workers,
-    woodLevel: game.professions.woodcutting.level, mineLevel: game.professions.mining.level, gear: game.ownedGear.length,
+    woodLevel: game.professions.woodcutting.level, mineLevel: game.professions.mining.level, fishLevel: game.professions.fishing.level, gear: game.ownedGear.length,
     actions: game.lifetime.totalClicks, goldEarned: game.lifetime.goldEarned, goldSpent: game.lifetime.goldSpent,
   }
   return Math.min(achievement.goal, values[achievement.kind])
@@ -734,14 +756,14 @@ function giveResource(game: Game, resource: Resource, amount: number, allowRare 
   if (rare) {
     game.inventory[rare.name] = (game.inventory[rare.name] || 0) + 1
     game.message = `Rare find: ${rare.name}!`
-    pushEvent(game, 'rare', 'Rare material found!', `${rare.icon} ${rare.name} · found while gathering ${resource.name}`)
+    pushEvent(game, 'rare', resource.skill === 'fishing' ? 'Rare catch!' : 'Rare material found!', `${rare.icon} ${rare.name} · ${resource.skill === 'fishing' ? 'caught at' : 'found while gathering'} ${resource.name}`)
   }
   const gainedXp = 3 + resource.tier * 2
   game.professions[resource.skill].xp += gainedXp
   while (game.professions[resource.skill].xp >= professionXpNeeded(game, resource.skill) && game.professions[resource.skill].level < 50) {
     game.professions[resource.skill].xp -= professionXpNeeded(game, resource.skill)
     game.professions[resource.skill].level++
-    const skillName = resource.skill === 'woodcutting' ? 'Woodcutting' : 'Mining'
+    const skillName = resource.skill[0]!.toUpperCase() + resource.skill.slice(1)
     const level = game.professions[resource.skill].level
     game.message = `${skillName} reached level ${level}!`
     pushEvent(game, 'level', `${skillName} level ${level}!`, 'Gathering speed and bonus-yield chance increased')
@@ -770,10 +792,11 @@ function completeGather(game: Game, skill: Skill) {
   giveResource(game, resource, amount, true)
   if (amount >= 2) {
     const title = amount === 2 ? 'Double yield!' : amount === 3 ? 'Triple yield!' : `${amount}× yield!`
-    pushEvent(game, 'yield', title, `${resource.icon} Gathered ${amount} × ${resource.item}`)
+    pushEvent(game, 'yield', title, `${resource.icon} ${resource.skill === 'fishing' ? 'Caught' : 'Gathered'} ${amount} × ${resource.item}`)
   }
-  gainFactionReputation(game, resource.skill === 'woodcutting' ? 'wardens' : 'delvers', Math.max(1, resource.tier))
-  game.message = `Gathered ${amount} × ${resource.item}${job.critical ? ' with a critical harvest' : ''}.`
+  if (resource.skill === 'woodcutting') gainFactionReputation(game, 'wardens', Math.max(1, resource.tier))
+  if (resource.skill === 'mining') gainFactionReputation(game, 'delvers', Math.max(1, resource.tier))
+  game.message = `${resource.skill === 'fishing' ? 'Caught' : 'Gathered'} ${amount} × ${resource.item}${job.critical ? ` with a critical ${resource.skill === 'fishing' ? 'catch' : 'harvest'}` : ''}.`
 }
 
 function completeCraft(game: Game) {
@@ -908,7 +931,7 @@ function advanceGame(game: Game, now = Date.now()) {
     }
   } else game.player.regenBuffer = 0
 
-    ; (['woodcutting', 'mining'] as Skill[]).forEach(skill => {
+    ; (['woodcutting', 'mining', 'fishing'] as Skill[]).forEach(skill => {
       if (game.jobs[skill] && now >= game.jobs[skill]!.endsAt) completeGather(game, skill)
     })
   if (game.crafting && now >= game.crafting.endsAt) completeCraft(game)
@@ -979,16 +1002,16 @@ function createGame(name: string): Game {
     id: randomUUID(), revision: 0, lastAdvancedAt: now, name, gold: 0, level: 1, xp: 0,
     message: `Welcome, ${name}. Your adventure begins.`,
     player: { health: 100, baseMaxHealth: 100, baseAttack: 10, baseDefense: 3, baseAttackSpeed: 1800, baseRecoveryTime: 60000, baseEnemyLoadTime: 2000, basePassiveRegen: .2, regenBuffer: 0 },
-    inventory: {}, ownedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe'], unlockedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe'],
-    equipment: { weapon: 'rustySword', helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: 'crackedPickaxe', hatchet: 'wornHatchet' },
-    professions: { woodcutting: { level: 1, xp: 0 }, mining: { level: 1, xp: 0 } }, craftingProfession: { level: 1, xp: 0 }, resourceMastery: {}, jobs: {},
+    inventory: {}, ownedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe', 'wornFishingRod'], unlockedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe', 'wornFishingRod'],
+    equipment: { weapon: 'rustySword', helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: 'crackedPickaxe', hatchet: 'wornHatchet', fishingRod: 'wornFishingRod' },
+    professions: { woodcutting: { level: 1, xp: 0 }, mining: { level: 1, xp: 0 }, fishing: { level: 1, xp: 0 } }, craftingProfession: { level: 1, xp: 0 }, resourceMastery: {}, jobs: {},
     workerAssignments: {}, workerProgress: {}, workers: 0, levelRewardWorkers: 0, shopUpgrades: { medic: 0, scouting: 0, training: 0, fortitude: 0, autoBattle: 0 },
     unlockedAchievements: new Set(), titleAchievementId: null, alliedFaction: null, factions: { wardens: { reputation: 0, rank: 0 }, delvers: { reputation: 0, rank: 0 }, vanguard: { reputation: 0, rank: 0 } }, daily: createDailyState(createLifetimeStats()), metalDetector: createMetalDetector(now),
     lifetime: createLifetimeStats(),
     enemyTier: 1, highestEnemyTier: 1, enemy: { name: 'Loading...', archetype: '', health: 0, maxHealth: 1, attack: 0, defense: 0, attackSpeed: 0, xp: 0, gold: 0 },
     battleActive: false, autoBattle: false, nextPlayerAttackAt: 0, nextEnemyAttackAt: 0, recovery: null, enemyLoad: null, crafting: null,
     events: [], nextEventId: 1,
-    progressSnapshot: { at: now, gold: 0, xp: 0, level: 1, kills: 0, gathered: 0, crafted: 0, inventory: {}, ownedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe'] },
+    progressSnapshot: { at: now, gold: 0, xp: 0, level: 1, kills: 0, gathered: 0, crafted: 0, inventory: {}, ownedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe', 'wornFishingRod'] },
   }
   startEnemyLoad(game, now, 'Loading your first enemy...')
   games.set(game.id, game)
@@ -1035,9 +1058,13 @@ function performAction(game: Game, action: Action, now: number) {
       const duration = effectiveDuration(game, resource, critical)
       game.jobs[resource.skill] = { resourceId: resource.id, startedAt: now, endsAt: now + duration * 1000, critical, duration }
       if (critical) {
-        game.message = `Critical harvest! This action runs at ${stats.critPower.toFixed(2)}× speed.`
-        pushEvent(game, 'critical', 'Critical harvest!', `${resource.name} · ${stats.critPower.toFixed(2)}× action speed`)
-      } else game.message = `${resource.skill === 'woodcutting' ? 'Chopping' : 'Mining'} ${resource.name}...`
+        const criticalLabel = resource.skill === 'fishing' ? 'Critical catch' : 'Critical harvest'
+        game.message = `${criticalLabel}! This action runs at ${stats.critPower.toFixed(2)}× speed.`
+        pushEvent(game, 'critical', `${criticalLabel}!`, `${resource.name} · ${stats.critPower.toFixed(2)}× action speed`)
+      } else {
+        const actionLabel = resource.skill === 'woodcutting' ? 'Chopping' : resource.skill === 'mining' ? 'Mining' : 'Fishing at'
+        game.message = `${actionLabel} ${resource.name}...`
+      }
       game.lifetime.manualGathers++
       break
     }
@@ -1276,6 +1303,7 @@ function publicState(game: Game, now = Date.now()) {
     professions: {
       woodcutting: { ...game.professions.woodcutting, xpNeeded: professionXpNeeded(game, 'woodcutting') },
       mining: { ...game.professions.mining, xpNeeded: professionXpNeeded(game, 'mining') },
+      fishing: { ...game.professions.fishing, xpNeeded: professionXpNeeded(game, 'fishing') },
     },
     craftingProfession: { ...game.craftingProfession, xpNeeded: craftingXpNeeded(game) },
     craftingStats: {
@@ -1285,7 +1313,7 @@ function publicState(game: Game, now = Date.now()) {
       bonusOutputs: game.lifetime.craftingBonusOutputs,
     },
     recipeLevels: Object.fromEntries(recipeData.map(recipe => [recipe.id, recipeLevel(recipe)])),
-    professionStats: { woodcutting: publicProfessionStats(game, 'woodcutting'), mining: publicProfessionStats(game, 'mining') },
+    professionStats: { woodcutting: publicProfessionStats(game, 'woodcutting'), mining: publicProfessionStats(game, 'mining'), fishing: publicProfessionStats(game, 'fishing') },
     effectiveDurations: Object.fromEntries(allResources.map(resource => [resource.id, effectiveDuration(game, resource)])),
     resourceMastery: game.resourceMastery, jobs, inventory: game.inventory,
     sellPrices: Object.fromEntries(Object.keys(game.inventory).map(item => [item, itemSellPrice(item)])),
@@ -1369,7 +1397,7 @@ function captureOfflineProgress(game: Game, now: number): { state: ReturnType<ty
   }
 }
 
-const config = { woods, rocks, allResources, rareMaterials, gearCatalog, recipes: recipeData, slotLabels, storePaths, shopUpgradeDetails, factionDefinitions, googleClientId }
+const config = { woods, rocks, fishingSpots, allResources, rareMaterials, gearCatalog, recipes: recipeData, slotLabels, storePaths, shopUpgradeDetails, factionDefinitions, googleClientId }
 
 function passwordHash(password: string, salt: string) {
   return scryptSync(password, salt, 64).toString('hex')
@@ -1972,6 +2000,7 @@ app.get(
         gold,
         woodcutting_level,
         mining_level,
+        fishing_level,
         total_clicks,
         monsters_killed,
         deaths,
