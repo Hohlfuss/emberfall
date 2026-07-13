@@ -238,9 +238,9 @@ function equippedGearFor(recipe: Recipe) {
 function formatBonus(stat: string, amount: number) {
   const labels: Record<string, string> = {
     attack: 'Attack', defense: 'Defense', maxHealth: 'Health', attackSpeed: 'Attack speed',
-    woodSpeed: 'Woodcutting speed', miningSpeed: 'Mining speed', fishingSpeed: 'Fishing speed', woodYield: 'Woodcutting yield', miningYield: 'Mining yield', fishingYield: 'Fishing yield',
-    woodBonusYieldPercent: 'Woodcutting bonus yield', miningBonusYieldPercent: 'Mining bonus yield', fishingBonusYieldPercent: 'Fishing bonus yield',
-    woodCrit: 'Woodcutting crit chance', miningCrit: 'Mining crit chance', fishingCrit: 'Fishing crit chance',
+    woodSpeed: 'Woodcutting speed', miningSpeed: 'Mining speed', fishingSpeed: 'Fishing speed', farmingSpeed: 'Farming speed', woodYield: 'Woodcutting yield', miningYield: 'Mining yield', fishingYield: 'Fishing yield', farmingYield: 'Farming yield',
+    woodBonusYieldPercent: 'Woodcutting bonus yield', miningBonusYieldPercent: 'Mining bonus yield', fishingBonusYieldPercent: 'Fishing bonus yield', farmingBonusYieldPercent: 'Farming bonus yield',
+    woodCrit: 'Woodcutting crit chance', miningCrit: 'Mining crit chance', fishingCrit: 'Fishing crit chance', farmingCrit: 'Farming crit chance',
     critPower: 'Crit power', recoverySpeed: 'Recovery time', encounterSpeed: 'Enemy load time',
   }
   const percent = stat.includes('Speed') && stat !== 'attackSpeed' || stat.includes('Crit') || stat.includes('BonusYield')
@@ -282,7 +282,9 @@ function gearComparison(recipe: Recipe) {
           ? 'mining bonus yield'
           : stat === 'fishingBonusYieldPercent'
             ? 'fishing bonus yield'
-          : stat.replace(/([A-Z])/g, ' $1').toLowerCase()
+            : stat === 'farmingBonusYieldPercent'
+              ? 'farming bonus yield'
+              : stat.replace(/([A-Z])/g, ' $1').toLowerCase()
     return difference === 0 ? '' : `${formatDelta(stat, difference)} ${label}`
   }).filter(Boolean)
   return `Compared with ${equipped.name}: ${changes.join(' · ') || 'no stat change'}`

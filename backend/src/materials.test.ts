@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { fishingSpots, rareMaterials, rocks, woods } from '../../frontend/src/gameData.ts'
+import { farmingPlots, fishingSpots, rareMaterials, rocks, woods } from '../../frontend/src/gameData.ts'
 import { eligibleRareMaterials, rollRareGatherMaterial, type RandomSource } from './materials.ts'
 
 function sequence(values: number[]): RandomSource {
@@ -9,7 +9,7 @@ function sequence(values: number[]): RandomSource {
 }
 
 function resource(id: string) {
-  const match = [...woods, ...rocks, ...fishingSpots].find(candidate => candidate.id === id)
+  const match = [...woods, ...rocks, ...fishingSpots, ...farmingPlots].find(candidate => candidate.id === id)
   assert.ok(match, `Expected resource ${id} to exist`)
   return match
 }
@@ -22,6 +22,7 @@ test('gathering has early, mid, and late rare materials for each resource family
       'Ore Crystal', 'Cinder Coal', 'Starsteel Dust',
       'Rough Gem', 'Fossil Shard', 'Runestone Fragment',
       'River Pearl', 'Luminous Scale', 'Abyssal Pearl',
+      'Rich Compost', 'Enchanted Seed', 'Worldroot Seed',
     ],
   )
 
@@ -40,6 +41,10 @@ test('gathering has early, mid, and late rare materials for each resource family
   assert.deepEqual(eligibleRareMaterials(resource('pondMinnow')).map(material => material.name), ['River Pearl'])
   assert.deepEqual(eligibleRareMaterials(resource('emberEel')).map(material => material.name), ['River Pearl', 'Luminous Scale'])
   assert.deepEqual(eligibleRareMaterials(resource('sunscaleTuna')).map(material => material.name), ['River Pearl', 'Luminous Scale', 'Abyssal Pearl'])
+
+  assert.deepEqual(eligibleRareMaterials(resource('turnipPatch')).map(material => material.name), ['Rich Compost'])
+  assert.deepEqual(eligibleRareMaterials(resource('cabbageField')).map(material => material.name), ['Rich Compost', 'Enchanted Seed'])
+  assert.deepEqual(eligibleRareMaterials(resource('goldenWheat')).map(material => material.name), ['Rich Compost', 'Enchanted Seed', 'Worldroot Seed'])
 })
 
 test('a successful rare roll selects from materials available at that resource tier', () => {
@@ -47,6 +52,7 @@ test('a successful rare roll selects from materials available at that resource t
   assert.equal(rollRareGatherMaterial(resource('gold'), sequence([0, .999]))?.name, 'Starsteel Dust')
   assert.equal(rollRareGatherMaterial(resource('moonstone'), sequence([0, .999]))?.name, 'Runestone Fragment')
   assert.equal(rollRareGatherMaterial(resource('sunscaleTuna'), sequence([0, .999]))?.name, 'Abyssal Pearl')
+  assert.equal(rollRareGatherMaterial(resource('goldenWheat'), sequence([0, .999]))?.name, 'Worldroot Seed')
 })
 
 test('a failed rare roll yields no secondary material', () => {

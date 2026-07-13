@@ -1,8 +1,8 @@
-export type Page = 'battle' | 'woodcutting' | 'mining' | 'fishing' | 'crafting' | 'metal detector' | 'workers' | 'inventory' | 'achievements' | 'factions' | 'auction' | 'high scores' | 'shop'
-export type Skill = 'woodcutting' | 'mining' | 'fishing'
-export type GearSlot = 'weapon' | 'helmet' | 'chest' | 'legs' | 'boots' | 'gloves' | 'ring' | 'amulet' | 'pickaxe' | 'hatchet' | 'fishingRod'
+export type Page = 'battle' | 'woodcutting' | 'mining' | 'fishing' | 'farming' | 'crafting' | 'metal detector' | 'workers' | 'inventory' | 'achievements' | 'factions' | 'auction' | 'high scores' | 'shop'
+export type Skill = 'woodcutting' | 'mining' | 'fishing' | 'farming'
+export type GearSlot = 'weapon' | 'helmet' | 'chest' | 'legs' | 'boots' | 'gloves' | 'ring' | 'amulet' | 'pickaxe' | 'hatchet' | 'fishingRod' | 'farmingHoe'
 export type ProfessionStats = { speed: number; bonusYieldPercent: number; critChance: number; critPower: number }
-export type ResourceFamily = 'wood' | 'ore' | 'rock' | 'fish'
+export type ResourceFamily = 'wood' | 'ore' | 'rock' | 'fish' | 'crop'
 
 // Keep every timed activity moving at the same slightly brisker pace.
 export const GAME_PACE_MULTIPLIER = .9
@@ -37,12 +37,15 @@ export type Bonuses = Partial<{
   woodSpeed: number
   miningSpeed: number
   fishingSpeed: number
+  farmingSpeed: number
   woodBonusYieldPercent: number
   miningBonusYieldPercent: number
   fishingBonusYieldPercent: number
+  farmingBonusYieldPercent: number
   woodCrit: number
   miningCrit: number
   fishingCrit: number
+  farmingCrit: number
   critPower: number
   recoverySpeed: number
   encounterSpeed: number
@@ -110,10 +113,24 @@ const fishingData = [
   ['leviathanFry', 'Abyssal Trench', 'Leviathan Fry', 10, 150, '🐉', '#547f9c'],
 ] as const
 
+const farmingData = [
+  ['turnipPatch', 'Turnip Patch', 'Turnip', 1, 10, '🌱', '#75a862'],
+  ['onionRows', 'Onion Rows', 'Onion', 2, 16, '🧅', '#a99d75'],
+  ['carrotBed', 'Carrot Bed', 'Carrot', 3, 24, '🥕', '#c98345'],
+  ['cabbageField', 'Cabbage Field', 'Cabbage', 4, 34, '🥬', '#76a66a'],
+  ['cornfield', 'Sunlit Cornfield', 'Corn', 5, 46, '🌽', '#d0aa4e'],
+  ['pumpkinPatch', 'Ember Pumpkin Patch', 'Ember Pumpkin', 6, 60, '🎃', '#bd7041'],
+  ['sunberryRows', 'Sunberry Rows', 'Sunberry', 7, 78, '🍓', '#bb5960'],
+  ['goldenWheat', 'Golden Wheat Field', 'Golden Wheat', 8, 98, '🌾', '#d2ae58'],
+  ['moonmelonPatch', 'Moonmelon Patch', 'Moonmelon', 9, 122, '🍈', '#7397aa'],
+  ['dragonPepperBed', 'Dragon Pepper Bed', 'Dragon Pepper', 10, 150, '🌶️', '#c05245'],
+] as const
+
 export const woods: Resource[] = treeData.map(([id, name, item, tier, duration, icon, color]) => ({ id, name, item, tier, duration, icon, color, skill: 'woodcutting', family: 'wood' }))
 export const rocks: Resource[] = miningData.map(([id, name, item, tier, duration, icon, color, family]) => ({ id, name, item, tier, duration, icon, color, skill: 'mining', family }))
 export const fishingSpots: Resource[] = fishingData.map(([id, name, item, tier, duration, icon, color]) => ({ id, name, item, tier, duration, icon, color, skill: 'fishing', family: 'fish' }))
-export const allResources = [...woods, ...rocks, ...fishingSpots]
+export const farmingPlots: Resource[] = farmingData.map(([id, name, item, tier, duration, icon, color]) => ({ id, name, item, tier, duration, icon, color, skill: 'farming', family: 'crop' }))
+export const allResources = [...woods, ...rocks, ...fishingSpots, ...farmingPlots]
 
 export const rareMaterials: RareMaterial[] = [
   { name: 'Ancient Resin', icon: '🟠', skill: 'woodcutting', family: 'wood', minTier: 1, sellPrice: 6, description: 'Rare drop from any tree.' },
@@ -128,6 +145,9 @@ export const rareMaterials: RareMaterial[] = [
   { name: 'River Pearl', icon: '⚪', skill: 'fishing', family: 'fish', minTier: 1, sellPrice: 6, description: 'Rare catch from any fishing spot.' },
   { name: 'Luminous Scale', icon: '🔆', skill: 'fishing', family: 'fish', minTier: 4, sellPrice: 12, description: 'Rare catch from tier 4+ fishing spots.' },
   { name: 'Abyssal Pearl', icon: '🔮', skill: 'fishing', family: 'fish', minTier: 8, sellPrice: 24, description: 'Rare catch from tier 8+ fishing spots.' },
+  { name: 'Rich Compost', icon: '🟤', skill: 'farming', family: 'crop', minTier: 1, sellPrice: 6, description: 'Rare find from any farming plot.' },
+  { name: 'Enchanted Seed', icon: '🌰', skill: 'farming', family: 'crop', minTier: 4, sellPrice: 12, description: 'Rare find from tier 4+ farming plots.' },
+  { name: 'Worldroot Seed', icon: '✨', skill: 'farming', family: 'crop', minTier: 8, sellPrice: 24, description: 'Rare find from tier 8+ farming plots.' },
 ]
 
 export const gearCatalog: Record<string, Gear> = {
@@ -135,6 +155,7 @@ export const gearCatalog: Record<string, Gear> = {
   wornHatchet: { id: 'wornHatchet', name: 'Worn Hatchet', slot: 'hatchet', tier: 0, icon: '🪓', description: 'A battered starter hatchet.', bonuses: {} },
   crackedPickaxe: { id: 'crackedPickaxe', name: 'Cracked Pickaxe', slot: 'pickaxe', tier: 0, icon: '⛏️', description: 'A battered starter pickaxe.', bonuses: {} },
   wornFishingRod: { id: 'wornFishingRod', name: 'Worn Fishing Rod', slot: 'fishingRod', tier: 0, icon: '🎣', description: 'A weathered starter rod that still catches fish.', bonuses: {} },
+  wornFarmingHoe: { id: 'wornFarmingHoe', name: 'Worn Farming Hoe', slot: 'farmingHoe', tier: 0, icon: '🪏', description: 'A battered starter hoe for tending simple crops.', bonuses: {} },
   pineHatchet: { id: 'pineHatchet', name: 'Pinebound Hatchet', slot: 'hatchet', tier: 1, icon: '🪓', description: 'A balanced early logging tool.', bonuses: { woodSpeed: 12, woodCrit: 3 } },
   copperPickaxe: { id: 'copperPickaxe', name: 'Copper Pickaxe', slot: 'pickaxe', tier: 1, icon: '⛏️', description: 'Reliable on shallow deposits.', bonuses: { miningSpeed: 12, miningCrit: 3 } },
   oakHatchet: { id: 'oakHatchet', name: 'Oaksteel Hatchet', slot: 'hatchet', tier: 3, icon: '🪓', description: 'Bites deep into dense timber.', bonuses: { woodSpeed: 25, woodCrit: 7, critPower: .25 } },
@@ -147,14 +168,18 @@ export const gearCatalog: Record<string, Gear> = {
   ironFishingRod: { id: 'ironFishingRod', name: 'Ironhook Rod', slot: 'fishingRod', tier: 3, icon: '🎣', description: 'Iron fittings hold firm against stronger catches.', bonuses: { fishingSpeed: 25, fishingCrit: 7, critPower: .25 } },
   silverFishingRod: { id: 'silverFishingRod', name: 'Silvertide Rod', slot: 'fishingRod', tier: 6, icon: '🎣', description: 'A balanced rod that improves speed, rare strikes, and catch yield.', bonuses: { fishingSpeed: 40, fishingBonusYieldPercent: 15, fishingCrit: 12, critPower: .5 } },
   mythrilFishingRod: { id: 'mythrilFishingRod', name: 'Abysscaller Rod', slot: 'fishingRod', tier: 10, icon: '🎣', description: 'A mythril masterwork built to pull legends from the deep.', bonuses: { fishingSpeed: 60, fishingBonusYieldPercent: 25, fishingCrit: 18, critPower: .75 } },
+  pineFarmingHoe: { id: 'pineFarmingHoe', name: 'Pinebound Hoe', slot: 'farmingHoe', tier: 1, icon: '🪏', description: 'A light early hoe with a sturdy pine shaft.', bonuses: { farmingSpeed: 12, farmingCrit: 3 } },
+  ironFarmingHoe: { id: 'ironFarmingHoe', name: 'Ironfield Hoe', slot: 'farmingHoe', tier: 3, icon: '🪏', description: 'An iron-edged hoe that turns stubborn soil quickly.', bonuses: { farmingSpeed: 25, farmingCrit: 7, critPower: .25 } },
+  silverFarmingHoe: { id: 'silverFarmingHoe', name: 'Silvergrove Hoe', slot: 'farmingHoe', tier: 6, icon: '🪏', description: 'A precise enchanted hoe that improves speed, harvest yield, and critical work.', bonuses: { farmingSpeed: 40, farmingBonusYieldPercent: 15, farmingCrit: 12, critPower: .5 } },
+  mythrilFarmingHoe: { id: 'mythrilFarmingHoe', name: 'Worldshaper Hoe', slot: 'farmingHoe', tier: 10, icon: '🪏', description: 'A mythril masterwork that makes even legendary crops flourish.', bonuses: { farmingSpeed: 60, farmingBonusYieldPercent: 25, farmingCrit: 18, critPower: .75 } },
   ironSword: { id: 'ironSword', name: 'Iron Longsword', slot: 'weapon', tier: 3, icon: '⚔️', description: 'A proper adventurer’s weapon.', bonuses: { attack: 10, attackSpeed: 100 } },
   ironHelm: { id: 'ironHelm', name: 'Iron Helm', slot: 'helmet', tier: 3, icon: '🪖', description: 'Keeps claws away from your face.', bonuses: { defense: 4, maxHealth: 10 } },
   ironChest: { id: 'ironChest', name: 'Ironbark Cuirass', slot: 'chest', tier: 4, icon: '🥋', description: 'Layered wood and iron plate.', bonuses: { defense: 7, maxHealth: 25 } },
   ironLegs: { id: 'ironLegs', name: 'Iron Greaves', slot: 'legs', tier: 4, icon: '🦿', description: 'Heavy, but reassuring.', bonuses: { defense: 5, maxHealth: 15 } },
-  trailBoots: { id: 'trailBoots', name: 'Trailrunner Boots', slot: 'boots', tier: 2, icon: '🥾', description: 'Quicker feet in work and war.', bonuses: { attackSpeed: 120, woodSpeed: 5, miningSpeed: 5, fishingSpeed: 5 } },
-  loggerGloves: { id: 'loggerGloves', name: 'Artisan Gloves', slot: 'gloves', tier: 3, icon: '🧤', description: 'A surer grip keeps every gathering skill moving.', bonuses: { woodSpeed: 6, miningSpeed: 6, fishingSpeed: 6, woodCrit: 2, miningCrit: 2, fishingCrit: 2 } },
-  silverRing: { id: 'silverRing', name: 'Ring of Momentum', slot: 'ring', tier: 6, icon: '💍', description: 'Keeps every gathering motion fluid.', bonuses: { woodSpeed: 8, miningSpeed: 8, fishingSpeed: 8 } },
-  moonAmulet: { id: 'moonAmulet', name: 'Moonstone Amulet', slot: 'amulet', tier: 9, icon: '📿', description: 'Turns critical gathering actions into flashes of motion.', bonuses: { critPower: 1, woodCrit: 5, miningCrit: 5, fishingCrit: 5, maxHealth: 30 } },
+  trailBoots: { id: 'trailBoots', name: 'Trailrunner Boots', slot: 'boots', tier: 2, icon: '🥾', description: 'Quicker feet in work and war.', bonuses: { attackSpeed: 120, woodSpeed: 5, miningSpeed: 5, fishingSpeed: 5, farmingSpeed: 5 } },
+  loggerGloves: { id: 'loggerGloves', name: 'Artisan Gloves', slot: 'gloves', tier: 3, icon: '🧤', description: 'A surer grip keeps every gathering skill moving.', bonuses: { woodSpeed: 6, miningSpeed: 6, fishingSpeed: 6, farmingSpeed: 6, woodCrit: 2, miningCrit: 2, fishingCrit: 2, farmingCrit: 2 } },
+  silverRing: { id: 'silverRing', name: 'Ring of Momentum', slot: 'ring', tier: 6, icon: '💍', description: 'Keeps every gathering motion fluid.', bonuses: { woodSpeed: 8, miningSpeed: 8, fishingSpeed: 8, farmingSpeed: 8 } },
+  moonAmulet: { id: 'moonAmulet', name: 'Moonstone Amulet', slot: 'amulet', tier: 9, icon: '📿', description: 'Turns critical gathering actions into flashes of motion.', bonuses: { critPower: 1, woodCrit: 5, miningCrit: 5, fishingCrit: 5, farmingCrit: 5, maxHealth: 30 } },
   bronzeSword: { id: 'bronzeSword', name: 'Bronze Shortsword', slot: 'weapon', tier: 1, icon: '🗡️', description: 'The first meaningful combat upgrade.', bonuses: { attack: 5 } },
   copperHelm: { id: 'copperHelm', name: 'Copper Cap', slot: 'helmet', tier: 1, icon: '🪖', description: 'Light protection for early tiers.', bonuses: { defense: 2, maxHealth: 8 } },
   copperChest: { id: 'copperChest', name: 'Copper Scale Vest', slot: 'chest', tier: 1, icon: '🥋', description: 'Overlapping scales soften monster claws.', bonuses: { defense: 3, maxHealth: 14 } },
@@ -164,8 +189,8 @@ export const gearCatalog: Record<string, Gear> = {
   obsidianHelm: { id: 'obsidianHelm', name: 'Obsidian War Helm', slot: 'helmet', tier: 7, icon: '🪖', description: 'Dark glass reinforced with iron bands.', bonuses: { defense: 10, maxHealth: 25 } },
   obsidianChest: { id: 'obsidianChest', name: 'Obsidian Bulwark', slot: 'chest', tier: 7, icon: '🥋', description: 'Armor built for the upper monster tiers.', bonuses: { defense: 16, maxHealth: 50, recoverySpeed: 500 } },
   goldGreaves: { id: 'goldGreaves', name: 'Sunforged Greaves', slot: 'legs', tier: 8, icon: '🦿', description: 'Enchanted gold moves without weight.', bonuses: { defense: 9, maxHealth: 30, encounterSpeed: 250 } },
-  forgeGloves: { id: 'forgeGloves', name: 'Runebound Forge Gloves', slot: 'gloves', tier: 5, icon: '🧤', description: 'Layered bindings make practiced gathering quicker.', bonuses: { woodSpeed: 10, miningSpeed: 10, fishingSpeed: 10, woodCrit: 5, miningCrit: 5, fishingCrit: 5, critPower: .25 } },
-  masterBoots: { id: 'masterBoots', name: 'Obsidian Pathfinder Boots', slot: 'boots', tier: 7, icon: '🥾', description: 'Masterwork boots built for dangerous ground and shorelines.', bonuses: { attackSpeed: 180, woodSpeed: 10, miningSpeed: 10, fishingSpeed: 10, defense: 4 } },
+  forgeGloves: { id: 'forgeGloves', name: 'Runebound Forge Gloves', slot: 'gloves', tier: 5, icon: '🧤', description: 'Layered bindings make practiced gathering quicker.', bonuses: { woodSpeed: 10, miningSpeed: 10, fishingSpeed: 10, farmingSpeed: 10, woodCrit: 5, miningCrit: 5, fishingCrit: 5, farmingCrit: 5, critPower: .25 } },
+  masterBoots: { id: 'masterBoots', name: 'Obsidian Pathfinder Boots', slot: 'boots', tier: 7, icon: '🥾', description: 'Masterwork boots built for dangerous terrain and fieldwork.', bonuses: { attackSpeed: 180, woodSpeed: 10, miningSpeed: 10, fishingSpeed: 10, farmingSpeed: 10, defense: 4 } },
   voidfang: { id: 'voidfang', name: 'Voidfang', slot: 'weapon', tier: 12, icon: '🗡️', description: 'A nearly impossible trophy torn from the void.', bonuses: { attack: 35, attackSpeed: 260, critPower: .5 } },
   heartOfTheGrove: { id: 'heartOfTheGrove', name: 'Heart of the Grove', slot: 'amulet', tier: 12, icon: '💚', description: 'A living relic that greatly improves woodcutting bonus yield.', bonuses: { maxHealth: 75, woodBonusYieldPercent: 30, woodSpeed: 20, woodCrit: 8 } },
   starforgedSignet: { id: 'starforgedSignet', name: 'Starforged Signet', slot: 'ring', tier: 12, icon: '🌠', description: 'A fallen star that greatly improves mining bonus yield.', bonuses: { miningBonusYieldPercent: 30, miningSpeed: 20, miningCrit: 18 } },
@@ -189,13 +214,17 @@ export const recipes: Recipe[] = [
   { id: 'ironFishingRodRecipe', name: 'Ironhook Rod', category: 'tools', description: 'Reinforce a fishing rod with iron fittings and a river pearl.', duration: 55, costs: { 'Pinebound Frame': 2, 'Iron Fittings': 3, 'River Pearl': 2 }, outputGear: 'ironFishingRod', progress: 0 },
   { id: 'silverFishingRodRecipe', name: 'Silvertide Rod', category: 'tools', description: 'A precise silver rod tuned with luminous scales.', duration: 105, costs: { 'Iron Fittings': 3, 'Silver Mechanism': 3, 'Luminous Scale': 3 }, outputGear: 'silverFishingRod', progress: 0 },
   { id: 'mythrilFishingRodRecipe', name: 'Abysscaller Rod', category: 'tools', description: 'The ultimate rod, balanced with mythril and abyssal pearls.', duration: 180, costs: { 'Obsidian Core': 2, 'Mythril Assembly': 2, 'Starsteel Ingot': 2, 'Abyssal Pearl': 3 }, outputGear: 'mythrilFishingRod', progress: 0 },
+  { id: 'pineFarmingHoeRecipe', name: 'Pinebound Hoe', category: 'tools', description: 'Craft a light tier I farming hoe.', duration: 25, costs: { 'Pine Plank': 3, 'Copper Ingot': 1 }, outputGear: 'pineFarmingHoe', progress: 0 },
+  { id: 'ironFarmingHoeRecipe', name: 'Ironfield Hoe', category: 'tools', description: 'Reinforce a farming hoe with iron fittings and rich compost.', duration: 55, costs: { 'Pinebound Frame': 2, 'Iron Fittings': 3, 'Rich Compost': 2 }, outputGear: 'ironFarmingHoe', progress: 0 },
+  { id: 'silverFarmingHoeRecipe', name: 'Silvergrove Hoe', category: 'tools', description: 'A precise silver hoe awakened with enchanted seeds.', duration: 105, costs: { 'Iron Fittings': 3, 'Silver Mechanism': 3, 'Enchanted Seed': 3 }, outputGear: 'silverFarmingHoe', progress: 0 },
+  { id: 'mythrilFarmingHoeRecipe', name: 'Worldshaper Hoe', category: 'tools', description: 'The ultimate farming tool, shaped around legendary worldroot seeds.', duration: 180, costs: { 'Obsidian Core': 2, 'Mythril Assembly': 2, 'Starsteel Ingot': 2, 'Worldroot Seed': 3 }, outputGear: 'mythrilFarmingHoe', progress: 0 },
   { id: 'ironSwordRecipe', name: 'Iron Longsword', category: 'combat', description: 'A large improvement to attack damage.', duration: 45, costs: { 'Iron Ingot': 4, 'Oak Log': 4 }, outputGear: 'ironSword', progress: 0 },
   { id: 'ironHelmRecipe', name: 'Iron Helm', category: 'combat', description: 'Increases defense and maximum health.', duration: 40, costs: { 'Iron Ingot': 3, 'Oak Log': 2 }, outputGear: 'ironHelm', progress: 0 },
   { id: 'ironChestRecipe', name: 'Ironbark Cuirass', category: 'combat', description: 'Heavy protection for dangerous enemy tiers.', duration: 75, costs: { 'Iron Ingot': 6, 'Oak Log': 8 }, outputGear: 'ironChest', progress: 0 },
   { id: 'ironLegsRecipe', name: 'Iron Greaves', category: 'combat', description: 'Durable protection for your legs.', duration: 65, costs: { 'Iron Ingot': 5, 'Oak Log': 4 }, outputGear: 'ironLegs', progress: 0 },
   { id: 'trailBootsRecipe', name: 'Trailrunner Boots', category: 'combat', description: 'Improves combat and gathering speed.', duration: 32, costs: { 'Birch Log': 8, 'Copper Ingot': 2 }, outputGear: 'trailBoots', progress: 0 },
   { id: 'loggerGlovesRecipe', name: 'Artisan Gloves', category: 'accessories', description: 'Improves speed and critical chance for every gathering skill.', duration: 48, costs: { 'Maple Log': 8, 'Iron Ingot': 2 }, outputGear: 'loggerGloves', progress: 0 },
-  { id: 'silverRingRecipe', name: 'Ring of Momentum', category: 'accessories', description: 'Improves woodcutting, mining, and fishing speed.', duration: 85, costs: { 'Silver Ingot': 5, 'Gold Ore': 2 }, outputGear: 'silverRing', progress: 0 },
+  { id: 'silverRingRecipe', name: 'Ring of Momentum', category: 'accessories', description: 'Improves every gathering profession’s speed.', duration: 85, costs: { 'Silver Ingot': 5, 'Gold Ore': 2 }, outputGear: 'silverRing', progress: 0 },
   { id: 'moonAmuletRecipe', name: 'Moonstone Amulet', category: 'accessories', description: 'Spiritweave and runestone focus its immense gathering crit power.', duration: 150, costs: { Moonstone: 4, Spiritweave: 3, Runestone: 2, 'Gold Ingot': 3 }, outputGear: 'moonAmulet', progress: 0 },
   { id: 'birchPlank', name: 'Birch Plank', category: 'components', description: 'Prepare one flexible board for light equipment.', duration: 16, costs: { 'Birch Log': 3 }, outputItem: 'Birch Plank', outputQty: 1, progress: 0 },
   { id: 'oakPlank', name: 'Oak Plank', category: 'components', description: 'Prepare one dense board for armor and tool hafts.', duration: 25, costs: { 'Oak Log': 3 }, outputItem: 'Oak Plank', outputQty: 1, progress: 0 },
@@ -236,5 +265,5 @@ export const recipes: Recipe[] = [
 
 export const slotLabels: Record<GearSlot, string> = {
   weapon: 'Weapon', helmet: 'Helmet', chest: 'Chest', legs: 'Legs', boots: 'Boots',
-  gloves: 'Gloves', ring: 'Ring', amulet: 'Amulet', pickaxe: 'Pickaxe', hatchet: 'Hatchet', fishingRod: 'Fishing Rod',
+  gloves: 'Gloves', ring: 'Ring', amulet: 'Amulet', pickaxe: 'Pickaxe', hatchet: 'Hatchet', fishingRod: 'Fishing Rod', farmingHoe: 'Farming Hoe',
 }

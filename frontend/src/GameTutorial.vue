@@ -12,8 +12,8 @@ const steps = [
   },
   {
     icon: '🎣', eyebrow: 'STEP 2 · GATHERING', title: 'Gather from land and water',
-    body: 'Woodcutting, Mining, and Fishing have separate levels and XP. Higher levels improve speed, bonus yield, and access to new resources and fishing spots.',
-    tip: 'Critical harvests and catches finish faster. Upgrade your hatchet, pickaxe, and fishing rod for stronger gathering stats.',
+    body: 'Woodcutting, Mining, Fishing, and Farming have separate levels and XP. Higher levels improve speed, bonus yield, and access to new resources, waters, and crops.',
+    tip: 'Critical harvests and catches finish faster. Upgrade each profession’s tool for stronger gathering stats.',
   },
   {
     icon: '♟', eyebrow: 'STEP 3 · WORKERS', title: 'Put gatherers to work',
