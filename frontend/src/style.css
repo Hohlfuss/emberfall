@@ -76,4 +76,4 @@
 @media(max-width:720px){.achievement-rewards{grid-column:2;justify-items:start;text-align:left}.achievement-rewards>button{min-width:110px}.achievement-grid article.has-title{grid-template-columns:38px 1fr}}
 
 /* Mobile shell clearance for the persistent navigation. */
-@media(max-width:720px){body{padding-bottom:66px}.game-shell{padding-bottom:66px}.chat-panel{bottom:76px}.leaderboard-page{bottom:76px;max-height:calc(100vh - 204px)}}
+@media(max-width:720px){body{padding-bottom:0}.game-shell{padding-bottom:0}.chat-panel{bottom:10px}.leaderboard-page{bottom:10px;max-height:calc(100vh - 138px)}}

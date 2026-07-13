@@ -5,6 +5,7 @@ import { cookingRecipes, farmingPlots, fishingSpots } from '../../frontend/src/g
 test('cooking has one progressively unlocked healing dish for every tier', () => {
   assert.equal(cookingRecipes.length, 10)
   assert.deepEqual(cookingRecipes.map(recipe => recipe.tier), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+  assert.deepEqual(cookingRecipes.map(recipe => recipe.healing), [30, 50, 80, 110, 150, 200, 270, 360, 480, 650])
   assert.equal(new Set(cookingRecipes.map(recipe => recipe.outputItem)).size, cookingRecipes.length)
 
   let previousHealing = 0
@@ -34,6 +35,7 @@ test('some foods provide valid healing over time without making every food ident
   const hotFoods = cookingRecipes.filter(recipe => recipe.hot)
   assert.ok(hotFoods.length >= 3)
   assert.ok(hotFoods.length < cookingRecipes.length)
+  assert.deepEqual(hotFoods.map(recipe => recipe.hot!.healing), [10, 16, 30, 40, 60, 150])
   for (const recipe of hotFoods) {
     assert.ok(Number.isInteger(recipe.hot!.healing) && recipe.hot!.healing > 0)
     assert.ok(Number.isInteger(recipe.hot!.duration) && recipe.hot!.duration > 0)
