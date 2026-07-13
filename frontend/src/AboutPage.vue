@@ -22,7 +22,7 @@
         <div>
           <p class="eyebrow">SUPPORT EMBERFALL</p>
           <h2>Help fund future updates</h2>
-          <p class="donation-message">if you like my ai made slop i would be grateful to recieve donations. i will add contens as i get tokens</p>
+          <p class="donation-message">If you like my AI-made slop, I would be grateful to receive donations. I’ll add more content as I get more tokens.</p>
           <small>Donations are optional and do not unlock gameplay advantages.</small>
         </div>
 
