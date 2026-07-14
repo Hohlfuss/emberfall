@@ -2381,7 +2381,19 @@ async function ensureWeeklyClanRaid(clan: ClanRow, now = Date.now()): Promise<Cl
     .eq('week_key', weekKey)
     .maybeSingle()
   if (existing.error) throw existing.error
-  if (existing.data) return existing.data as ClanRaidRow
+  if (existing.data) {
+    const current = existing.data as ClanRaidRow
+    const stats = weeklyRaidStats(clan.raid_victories || 0)
+    if (Number(current.attack) === stats.attack && Number(current.defense) === stats.defense && Number(current.attack_speed) === stats.attackSpeed) return current
+    const refreshed = await supabase
+      .from('clan_raids')
+      .update({ attack: stats.attack, defense: stats.defense, attack_speed: stats.attackSpeed })
+      .eq('id', current.id)
+      .select('*')
+      .single()
+    if (refreshed.error) throw refreshed.error
+    return refreshed.data as ClanRaidRow
+  }
 
   const boss = weeklyRaidDefinition(weekKey)
   const stats = weeklyRaidStats(clan.raid_victories || 0)

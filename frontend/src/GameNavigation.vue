@@ -7,9 +7,9 @@ const emit = defineEmits<{ 'update:modelValue': [page: Page] }>()
 
 const groups: Array<{ name: string; pages: Page[] }> = [
   { name: 'Adventure', pages: ['battle'] },
-  { name: 'Professions', pages: ['crafting', 'woodcutting', 'mining', 'cooking', 'fishing', 'farming'] },
+  { name: 'Professions', pages: ['crafting', 'woodcutting', 'mining', 'inventory', 'cooking', 'fishing', 'farming'] },
   { name: 'Realm', pages: ['workers', 'metal detector', 'factions', 'clans', 'auction', 'shop'] },
-  { name: 'Character', pages: ['inventory', 'achievements', 'high scores'] },
+  { name: 'Character', pages: ['achievements', 'high scores'] },
   { name: 'Info', pages: ['about'] },
 ]
 

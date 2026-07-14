@@ -58,7 +58,7 @@ export function weeklyRaidStats(completedRaids: number) {
   return {
     difficulty,
     maxHealth: Math.round(1_200 * 1.35 ** victories),
-    attack: 8 + difficulty * 2,
+    attack: 30 + difficulty * 12,
     defense: 1 + Math.floor(difficulty / 2),
     attackSpeed: Math.max(900, 2_200 - difficulty * 40),
     goldReward: 100 + difficulty * 25,
@@ -73,7 +73,9 @@ export function simulateRaidAttempt(player: RaidCombatStats, boss: RaidEnemyStat
   let nextPlayerAttack = Math.max(1, Math.floor(player.attackSpeed))
   let nextBossAttack = Math.max(1, Math.floor(boss.attackSpeed))
   const playerDamage = Math.max(1, Math.floor(player.attack) - Math.floor(boss.defense))
-  const bossDamage = Math.max(1, Math.floor(boss.attack) - Math.floor(player.defense))
+  // Raid bosses hit harder and punch through half of defense, without dealing
+  // damage as a fixed percentage of the player's maximum health.
+  const bossDamage = Math.max(1, Math.floor(boss.attack * 1.5) - Math.floor(player.defense * .5))
   const targetHealth = Math.max(1, Math.floor(boss.currentHealth))
   const timeline: RaidCombatEvent[] = []
   let attacks = 0

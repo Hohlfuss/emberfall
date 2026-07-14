@@ -19,16 +19,18 @@ test('a defeated raid makes the following raid strictly stronger and more reward
   assert.ok(second.goldReward > first.goldReward)
   assert.ok(second.xpReward > first.xpReward)
   assert.ok(second.clanXpReward > first.clanXpReward)
+  assert.ok(first.attack >= 40)
 })
 
 test('raid attempts use combat stats without mutating them', () => {
   const player = { maxHealth: 100, attack: 12, defense: 3, attackSpeed: 1_620 }
   const boss = { currentHealth: 1_200, attack: 10, defense: 1, attackSpeed: 2_160 }
   const result = simulateRaidAttempt(player, boss)
-  assert.equal(result.damage, 220)
+  assert.equal(result.damage, 110)
   assert.equal(result.survived, false)
   assert.equal(result.timeline.at(-1)?.playerHealth, 0)
-  assert.equal(result.timeline.at(-1)?.bossHealth, 980)
+  assert.equal(result.timeline.at(-1)?.bossHealth, 1_090)
+  assert.equal(result.timeline.filter(event => event.actor === 'boss')[0]?.damage, 14)
   assert.ok(result.duration > 0)
   assert.deepEqual(player, { maxHealth: 100, attack: 12, defense: 3, attackSpeed: 1_620 })
 })
