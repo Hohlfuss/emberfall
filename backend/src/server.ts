@@ -23,10 +23,12 @@ import {
 } from './detector.ts'
 import { AUTO_EAT_COOLDOWN_MS, AUTO_EAT_HEALTH_THRESHOLD, autoEatReady, deathGoldPenalty, healOverTimeProgress, stackedHealOverTimeTiming, upgradedFoodHealing } from './combatFood.ts'
 import { sanitizeClanDescription, sanitizeClanMessage, sanitizeClanName, sanitizeClanVisibility, sanitizePlayerIdentifier, type ClanVisibility } from './clans.ts'
-import { clanProgress, contributionValue, dailyMaterialIndex, utcDate } from './clanProgress.ts'
+import { clanContributionMaterialPool, clanProgress, contributionValue, dailyMaterialIndex, utcDate } from './clanProgress.ts'
 import { simulateRaidAttempt, utcWeekKey, weeklyRaidDefinition, weeklyRaidStats } from './clanRaids.ts'
 import { supabase } from "../supabase.ts";
 import { canonicalDisplayName, googleUsernameCandidates, sanitizeDisplayName, verifyGoogleCredential } from './googleAuth.ts'
+
+const clanContributionMaterials = clanContributionMaterialPool(allResources)
 
 const leaderboardCategories = {
   level: {
@@ -2352,7 +2354,7 @@ async function findPlayerByIdentifier(identifier: string) {
 
 function dailyClanRequest(clanId: string, now = Date.now()) {
   const date = utcDate(now)
-  const resource = allResources[dailyMaterialIndex(clanId, date, allResources.length)]!
+  const resource = clanContributionMaterials[dailyMaterialIndex(clanId, date, clanContributionMaterials.length)]!
   const resetAt = Date.parse(`${date}T00:00:00.000Z`) + 86_400_000
   return {
     date,

@@ -38,6 +38,10 @@ export function dailyMaterialIndex(clanId: string, date: string, materialCount: 
   return (hash >>> 0) % materialCount
 }
 
+export function clanContributionMaterialPool<T extends { skill: string }>(resources: readonly T[]): T[] {
+  return resources.filter(resource => resource.skill === 'woodcutting' || resource.skill === 'mining')
+}
+
 export function contributionValue(quantity: number, tier: number): number {
   if (!Number.isInteger(quantity) || quantity < 1) throw new Error('Contribution quantity must be a positive whole number.')
   if (!Number.isInteger(tier) || tier < 1) throw new Error('Contribution tier must be a positive whole number.')
