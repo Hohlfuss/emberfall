@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 import { useGame } from './useGame'
-import type { Skill } from './gameData'
+import type { Resource, Skill } from './gameData'
 import ChatPanel from './ChatPanel.vue'
 import AuctionHouse from './AuctionHouse.vue'
 import CraftingPage from './CraftingPage.vue'
@@ -22,7 +22,7 @@ const {
   tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authUsernameError, authLoading, sessionRestoring, serverOnline, backendError, googleClientId, playerName, playerTitle, gold, level, xp, xpNeeded, message, player, combatStats, dps,
   enemyTier, highestEnemyTier, encounterMode, defeatedBosses, bossDefinitions, currentBoss, enemy, battleStarted, autoBattle, selectedFood, autoEat, autoEatThreshold, autoEatCooldownRemaining, foodHealingPowerBonus, activeFoodHot, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
   heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
-  woods, rocks, allResources, rareMaterials, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, sellPrices,
+  woods, rocks, allResources, rareMaterials, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, professions, jobs, inventory, sellPrices, resourceMastery, recipeMastery, effectiveRecipeDurations,
   workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId,
   craftingProfession, craftingStats,
   factionDefinitions, alliedFaction, factions,
@@ -31,7 +31,7 @@ const {
   leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
   chatMessages, chatOnline, chatError, clan, clanInvitations, publicClans, clanMessages, clanOnline, clanError, clanChatError, clanNotice, clanActionRunning, clanRaidCombat, giftError, giftNotice, giftRunning,
   auctionListings, auctionError, offlineProgress,
-  professionStats, professionXpNeeded, isUnlocked, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip,
+  professionStats, professionXpNeeded, isUnlocked, effectiveDuration, shopUpgradeCost, achievementProgress, formatBonus, gearTooltip, resourceTooltip,
   submitAuth, switchAuthMode, loginWithGoogle, submitDisplayName, startBattle, setEncounterMode, changeEnemyTier, gather, craft, eatFood, selectFood, toggleAutoEat, assignWorker, buyWorker, buyShopUpgrade, buyStoreGear, equipGear, toggleAutoBattle, sellItem, sellGear, allyFaction, revealDetectorTile, startDetectorDrill, newDetectorSite, equipAchievementTitle, dismissToast, dismissOfflineProgress, formatOfflineDuration, loadLeaderboard, sendChat, loadClans, createClan, joinClan, inviteClanMember, acceptClanInvitation, declineClanInvitation, leaveClan, disbandClan, contributeToClan, fightClanRaid, sendGift, loadAuction, createAuction, buyAuction, cancelAuction,
   displayNameRequired, displayNameDraft, displayNameError, displayNameLoading,
 } = useGame()
@@ -39,6 +39,35 @@ const {
 const craftingRecipeId = ref('')
 const craftingRecipeView = ref<'all' | 'gear' | 'components'>('gear')
 const craftingRecipeTrail = ref<string[]>([])
+const lastGatheringResource = ref<Partial<Record<Skill, string>>>({})
+const pendingGatheringFocus = ref<{ skill: Skill; resourceId: string } | null>(null)
+const focusedResourceId = ref('')
+
+function startGathering(resource: Resource) {
+  lastGatheringResource.value[resource.skill] = resource.id
+  gather(resource)
+}
+
+function navigateToMaterial(target: { skill: Skill; resourceId: string }) {
+  lastGatheringResource.value[target.skill] = target.resourceId
+  pendingGatheringFocus.value = target
+  page.value = target.skill
+}
+
+watch(page, async currentPage => {
+  if (currentPage !== 'woodcutting' && currentPage !== 'mining' && currentPage !== 'fishing' && currentPage !== 'farming') return
+  const skill = currentPage as Skill
+  const directed = pendingGatheringFocus.value?.skill === skill ? pendingGatheringFocus.value.resourceId : ''
+  const resourceId = directed || jobs.value[skill]?.id || lastGatheringResource.value[skill] || ''
+  pendingGatheringFocus.value = null
+  focusedResourceId.value = resourceId
+  if (!resourceId) return
+  await nextTick()
+  const card = document.getElementById(`resource-${resourceId}`)
+  if (!card) return
+  card.focus({ preventScroll: true })
+  card.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+}, { flush: 'post' })
 
 const toastIcons = {
   achievement: '★',
@@ -80,11 +109,11 @@ watch(playerName, name => {
     <BattlePage v-if="page === 'battle'" :encounter-mode="encounterMode" :current-boss="currentBoss" :bosses="bossDefinitions" :defeated-boss-ids="defeatedBosses" :defeated-bosses="defeatedBosses.length" :boss-total="bossDefinitions.length" :enemy-tier="enemyTier" :highest-enemy-tier="highestEnemyTier" :enemy="enemy" :enemy-loading="enemyLoading" :enemy-load-remaining="enemyLoadRemaining" :enemy-load-percent="enemyLoadPercent" :battle-started="battleStarted" :auto-battle="autoBattle" :auto-battle-unlocked="shopUpgrades.autoBattle > 0" :recovering="recovering" :recovery-percent="recoveryPercent" :level="level" :player-name="playerName" :player-title="playerTitle" :health="player.health" :hero-health="heroHealth" :enemy-health="enemyHealth" :combat-stats="combatStats" :battle-button-label="battleButtonLabel" :food-enabled="false" :foods="battleFoods" :selected-food="selectedFood" :active-food-hot="activeFoodHot" :auto-eat="autoEat" :auto-eat-unlocked="shopUpgrades.autoEat > 0" :auto-eat-threshold="autoEatThreshold" :auto-eat-cooldown-remaining="autoEatCooldownRemaining" :healing-power-bonus="foodHealingPowerBonus" @start="startBattle" @toggle-auto-battle="toggleAutoBattle" @change-tier="changeEnemyTier" @set-encounter-mode="setEncounterMode" @select-food="selectFood" @eat="eatFood" @toggle-auto-eat="toggleAutoEat" />
 
     <section v-else-if="page === 'woodcutting' || page === 'mining'" class="page-content">
-      <div class="page-heading gathering-heading"><div><p class="eyebrow">GATHERING</p><h1>{{ page }}</h1><p>Choose a resource and start gathering.</p></div><div class="skill-progress-card" :class="page"><span>LEVEL {{ professions[page].level }}</span><strong>{{ professions[page].xp.toLocaleString() }} / {{ professionXpNeeded(page).toLocaleString() }} XP</strong></div></div>
-      <div class="resource-grid"><article v-for="resource in page === 'woodcutting' ? woods : rocks" :key="resource.id" class="resource-card" :class="{ locked: !isUnlocked(resource) }" :style="{ '--accent': resource.color }" :title="resourceTooltip(resource)"><div class="resource-icon">{{ resource.icon }}</div><div><span class="tier">TIER {{ resource.tier }} · {{ resource.family }}</span><h3>{{ resource.name }}</h3><p>{{ resource.item }}</p></div><div class="action-area"><div class="meter" :class="{ critical: jobs[page]?.id === resource.id && jobs[page]?.critical }"><i :style="{ width: `${jobs[page]?.id === resource.id ? jobs[page]?.progress : 0}%` }"></i></div><button @click="gather(resource)" :disabled="!!jobs[page] || !isUnlocked(resource)">{{ !isUnlocked(resource) ? `SKILL LV ${resource.tier}` : jobs[page]?.id === resource.id ? `${jobs[page]?.critical ? 'CRIT · ' : ''}${Math.floor(jobs[page]?.progress || 0)}%` : page === 'woodcutting' ? 'CHOP' : 'MINE' }}</button></div><b class="owned">{{ inventory[resource.item] || 0 }} owned</b></article></div>
+      <div class="page-heading gathering-heading"><div><p class="eyebrow">GATHERING</p><h1>{{ page }}</h1><p>Choose a resource and start gathering.</p></div><div class="skill-progress-card" :class="page"><div class="skill-level-copy"><span>LEVEL {{ professions[page].level }}</span><strong>{{ professions[page].xp.toLocaleString() }} / {{ professionXpNeeded(page).toLocaleString() }} XP</strong></div><div class="profession-level-meter" role="progressbar" :aria-label="`${page} level progress`" aria-valuemin="0" :aria-valuemax="professionXpNeeded(page)" :aria-valuenow="professions[page].xp"><i :style="{ width: `${Math.min(100, professions[page].xp / professionXpNeeded(page) * 100)}%` }"></i></div><div class="profession-card-stats"><span><b>+{{ professionStats(page).speed.toFixed(1) }}%</b> Speed</span><span><b>+{{ professionStats(page).bonusYieldPercent.toFixed(1) }}%</b> Bonus yield</span><span><b>{{ professionStats(page).critChance.toFixed(1) }}%</b> Crit chance</span><span><b>{{ professionStats(page).critPower.toFixed(2) }}×</b> Crit power</span></div></div></div>
+      <div class="resource-grid"><article v-for="resource in page === 'woodcutting' ? woods : rocks" :id="`resource-${resource.id}`" :key="resource.id" tabindex="-1" class="resource-card" :class="{ locked: !isUnlocked(resource), focused: focusedResourceId === resource.id }" :style="{ '--accent': resource.color }" :title="resourceTooltip(resource)"><div class="resource-icon">{{ resource.icon }}</div><div><span class="tier">TIER {{ resource.tier }} · {{ resource.family }}</span><h3>{{ resource.name }}</h3><p>{{ resource.item }}</p><div class="resource-effective-stats"><span><b>{{ effectiveDuration(resource).toFixed(1) }}s</b> effective</span><span><b>{{ resourceMastery[resource.id] || 0 }}</b> mastery · +{{ Math.floor((resourceMastery[resource.id] || 0) / 10) }}% speed</span></div></div><div class="action-area"><div class="meter" :class="{ critical: jobs[page]?.id === resource.id && jobs[page]?.critical }"><i :style="{ width: `${jobs[page]?.id === resource.id ? jobs[page]?.progress : 0}%` }"></i></div><button @click="startGathering(resource)" :disabled="!!jobs[page] || !isUnlocked(resource)">{{ !isUnlocked(resource) ? `SKILL LV ${resource.tier}` : jobs[page]?.id === resource.id ? `${jobs[page]?.critical ? 'CRIT · ' : ''}${Math.floor(jobs[page]?.progress || 0)}%` : page === 'woodcutting' ? 'CHOP' : 'MINE' }}</button></div><b class="owned">{{ inventory[resource.item] || 0 }} owned</b></article></div>
     </section>
 
-    <CraftingPage v-else-if="page === 'crafting'" v-model:selected-id="craftingRecipeId" v-model:view="craftingRecipeView" v-model:trail="craftingRecipeTrail" :recipes="craftingRecipes" :inventory="inventory" :gear-catalog="gearCatalog" :equipment="equipment" :resources="allResources" :rare-materials="rareMaterials" :recipe-levels="recipeLevels" :crafting-id="craftingId" :profession="craftingProfession" :stats="craftingStats" @craft="craft" @navigate="page = $event" />
+    <CraftingPage v-else-if="page === 'crafting'" v-model:selected-id="craftingRecipeId" v-model:view="craftingRecipeView" v-model:trail="craftingRecipeTrail" :recipes="craftingRecipes" :inventory="inventory" :gear-catalog="gearCatalog" :equipment="equipment" :resources="allResources" :rare-materials="rareMaterials" :recipe-levels="recipeLevels" :recipe-mastery="recipeMastery" :effective-durations="effectiveRecipeDurations" :crafting-id="craftingId" :profession="craftingProfession" :stats="craftingStats" @craft="craft" @navigate="navigateToMaterial" />
 
     <MetalDetectorPage v-else-if="page === 'metal detector'" :detector="metalDetector" :gold="gold" @reveal="revealDetectorTile" @drill="startDetectorDrill" @relocate="newDetectorSite" />
 

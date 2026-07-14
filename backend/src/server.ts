@@ -134,6 +134,7 @@ type Game = {
   craftingProfession: Profession
   cookingProfession: Profession
   resourceMastery: Record<string, number>
+  recipeMastery: Record<string, number>
   jobs: Partial<Record<Skill, GatherJob>>
   workerAssignments: Record<string, number>
   workerProgress: Record<string, number>
@@ -529,6 +530,8 @@ function deserializeGame(value: unknown): Game {
 
     craftingProfession: stored.craftingProfession ?? { level: 1, xp: 0 },
     cookingProfession: stored.cookingProfession ?? { level: 1, xp: 0 },
+    resourceMastery: stored.resourceMastery ?? {},
+    recipeMastery: stored.recipeMastery ?? {},
     cooking: stored.cooking ?? null,
     selectedFood: cookingRecipes.some(recipe => recipe.outputItem === stored.selectedFood) ? stored.selectedFood : null,
     autoEat: Boolean(stored.autoEat && (stored.shopUpgrades?.autoEat ?? 0) > 0),
@@ -818,6 +821,12 @@ function effectiveDuration(game: Game, resource: Resource, critical = false) {
   return Math.max(.75, resource.duration * GAME_PACE_MULTIPLIER / (1 + (stats.speed + masterySpeed) / 100) / (critical ? stats.critPower : 1))
 }
 
+function effectiveCraftDuration(game: Game, recipe: Recipe) {
+  const masterySpeed = Math.floor((game.recipeMastery[recipe.id] || 0) / 10)
+  const speed = Math.min(90, craftingStats(game).speed + masterySpeed)
+  return Math.max(.1, recipe.duration * GAME_PACE_MULTIPLIER * (1 - speed / 100))
+}
+
 function pushEvent(game: Game, kind: EventKind, title: string, detail: string) {
   game.events.push({ id: game.nextEventId++, kind, title, detail })
   if (game.events.length > 50) game.events.splice(0, game.events.length - 50)
@@ -1074,6 +1083,7 @@ function completeCraft(game: Game) {
     pushEvent(game, 'level', `Crafting level ${level}!`, 'New recipes may now be available in the forge')
   }
   game.lifetime.crafted++
+  game.recipeMastery[recipe.id] = (game.recipeMastery[recipe.id] || 0) + 1
   gainFactionReputation(game, 'artificers', Math.max(1, recipeLevel(recipe)))
   game.message = `${recipe.name} completed and added to your inventory.${craft.receipt ? ` Materials: ${craft.receipt}.` : ''}`
   checkAchievements(game)
@@ -1326,7 +1336,7 @@ function createGame(name: string): Game {
     player: { health: 100, baseMaxHealth: 100, baseAttack: 10, baseDefense: 3, baseAttackSpeed: 1800, baseRecoveryTime: 60000, baseEnemyLoadTime: BASE_ENEMY_LOAD_TIME, basePassiveRegen: .2, regenBuffer: 0 },
     inventory: {}, ownedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe', 'wornFishingRod', 'wornFarmingHoe'], unlockedGear: ['rustySword', 'wornHatchet', 'crackedPickaxe', 'wornFishingRod', 'wornFarmingHoe'],
     equipment: { weapon: 'rustySword', helmet: undefined, chest: undefined, legs: undefined, boots: undefined, gloves: undefined, ring: undefined, amulet: undefined, pickaxe: 'crackedPickaxe', hatchet: 'wornHatchet', fishingRod: 'wornFishingRod', farmingHoe: 'wornFarmingHoe' },
-    professions: { woodcutting: { level: 1, xp: 0 }, mining: { level: 1, xp: 0 }, fishing: { level: 1, xp: 0 }, farming: { level: 1, xp: 0 } }, craftingProfession: { level: 1, xp: 0 }, cookingProfession: { level: 1, xp: 0 }, resourceMastery: {}, jobs: {},
+    professions: { woodcutting: { level: 1, xp: 0 }, mining: { level: 1, xp: 0 }, fishing: { level: 1, xp: 0 }, farming: { level: 1, xp: 0 } }, craftingProfession: { level: 1, xp: 0 }, cookingProfession: { level: 1, xp: 0 }, resourceMastery: {}, recipeMastery: {}, jobs: {},
     workerAssignments: {}, workerProgress: {}, workers: 0, levelRewardWorkers: 0, shopUpgrades: { medic: 0, scouting: 0, training: 0, fortitude: 0, autoBattle: 0, autoEat: 0, healingPower: 0 }, selectedFood: null, autoEat: false, nextAutoEatAt: 0, foodHotQueue: [],
     unlockedAchievements: new Set(), titleAchievementId: null, alliedFaction: null, factions: createFactionProgress(), daily: createDailyState(createLifetimeStats()), metalDetector: createMetalDetector(now),
     lifetime: createLifetimeStats(),
@@ -1434,7 +1444,7 @@ function performAction(game: Game, action: Action, now: number) {
         Object.entries(inventoryBefore).forEach(([item, count]) => { game.inventory[item] = count })
         reject(`Could not deduct the required ${invalidDeduction[0]}. No materials were consumed.`)
       }
-      const duration = recipe.duration * GAME_PACE_MULTIPLIER * (1 - craftStats.speed / 100)
+      const duration = effectiveCraftDuration(game, recipe)
       game.crafting = { recipeId: recipe.id, startedAt: now, endsAt: now + duration * 1000, duration, receipt: receipt.join(' · ') }
       game.message = `Crafting ${recipe.name}... Used ${receipt.join(' · ')}.`
       break
@@ -1743,7 +1753,8 @@ function publicState(game: Game, now = Date.now()) {
     recipeLevels: Object.fromEntries(recipeData.map(recipe => [recipe.id, recipeLevel(recipe)])),
     professionStats: { woodcutting: publicProfessionStats(game, 'woodcutting'), mining: publicProfessionStats(game, 'mining'), fishing: publicProfessionStats(game, 'fishing'), farming: publicProfessionStats(game, 'farming') },
     effectiveDurations: Object.fromEntries(allResources.map(resource => [resource.id, effectiveDuration(game, resource)])),
-    resourceMastery: game.resourceMastery, jobs, inventory: game.inventory,
+    effectiveRecipeDurations: Object.fromEntries(recipeData.map(recipe => [recipe.id, effectiveCraftDuration(game, recipe)])),
+    resourceMastery: game.resourceMastery, recipeMastery: game.recipeMastery, jobs, inventory: game.inventory,
     sellPrices: Object.fromEntries(Object.keys(game.inventory).map(item => [item, itemSellPrice(item)])),
     workers: game.workers, workerPrice: workerPrice(game), workerAssignments: game.workerAssignments, workerProgress: game.workerProgress,
     assignedWorkers, freeWorkers: game.workers - assignedWorkers,

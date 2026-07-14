@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { GAME_PACE_MULTIPLIER, type Gear, type GearSlot, type RareMaterial, type Recipe, type Resource, type Skill } from './gameData'
+import { type Gear, type GearSlot, type RareMaterial, type Recipe, type Resource, type Skill } from './gameData'
 
 type DisplayRecipe = Recipe & { progress: number; remaining?: number }
 type RecipeState = 'active' | 'ready' | 'missing' | 'locked'
@@ -14,6 +14,8 @@ const props = defineProps<{
   resources: Resource[]
   rareMaterials: RareMaterial[]
   recipeLevels: Record<string, number>
+  recipeMastery: Record<string, number>
+  effectiveDurations: Record<string, number>
   craftingId: string
   profession: { level: number; xp: number; xpNeeded: number }
   stats: { speed: number; conservationChance: number; bonusOutputChance: number }
@@ -21,7 +23,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   craft: [recipe: Recipe]
-  navigate: [skill: Skill]
+  navigate: [target: { skill: Skill; resourceId: string }]
 }>()
 
 const view = defineModel<RecipeView>('view', { default: 'gear' })
@@ -128,6 +130,14 @@ function ingredientSource(item: string): Skill | undefined {
   return props.resources.find(resource => resource.item === item)?.skill || props.rareMaterials.find(material => material.name === item)?.skill
 }
 
+function gatheringTarget(item: string) {
+  const direct = props.resources.find(resource => resource.item === item)
+  if (direct) return { skill: direct.skill, resourceId: direct.id }
+  const rare = props.rareMaterials.find(material => material.name === item)
+  const source = rare && props.resources.find(resource => resource.skill === rare.skill && resource.family === rare.family && resource.tier >= rare.minTier)
+  return source ? { skill: source.skill, resourceId: source.id } : undefined
+}
+
 function revealDetailsOnSmallScreen() {
   if (!window.matchMedia('(max-width: 900px)').matches) return
   void nextTick(() => {
@@ -170,7 +180,15 @@ function outputLabel(recipe: Recipe) {
 }
 
 function effectiveDuration(recipe: Recipe) {
-  return Math.max(.1, recipe.duration * GAME_PACE_MULTIPLIER * (1 - props.stats.speed / 100))
+  return props.effectiveDurations[recipe.id] ?? recipe.duration
+}
+
+function mastery(recipe: Recipe) {
+  return props.recipeMastery[recipe.id] || 0
+}
+
+function masterySpeed(recipe: Recipe) {
+  return Math.floor(mastery(recipe) / 10)
 }
 
 function formatDuration(seconds: number) {
@@ -314,6 +332,12 @@ function missingMaterialHint(item: string, needed: number) {
       <div class="crafting-level" aria-label="Crafting level">
         <div><span>CRAFTING LEVEL</span><strong>{{ profession.level }}</strong></div>
         <small>{{ profession.xp.toLocaleString() }} / {{ profession.xpNeeded.toLocaleString() }} XP</small>
+        <div class="profession-level-meter" role="progressbar" aria-label="Crafting level progress" aria-valuemin="0" :aria-valuemax="profession.xpNeeded" :aria-valuenow="profession.xp"><i :style="{ width: `${Math.min(100, profession.xp / profession.xpNeeded * 100)}%` }"></i></div>
+        <div class="profession-card-stats crafting-card-stats">
+          <span><b>+{{ stats.speed }}%</b> Speed</span>
+          <span><b>{{ stats.conservationChance }}%</b> Conservation</span>
+          <span><b>{{ stats.bonusOutputChance }}%</b> Bonus output</span>
+        </div>
       </div>
     </header>
 
@@ -349,7 +373,7 @@ function missingMaterialHint(item: string, needed: number) {
             <b class="recipe-row-icon">{{ categoryIcon(recipe) }}</b>
             <span class="recipe-row-copy">
               <strong>{{ recipe.name }}</strong>
-              <small>{{ recipe.outputGear ? 'Equipment' : outputLabel(recipe) }} · {{ formatDuration(effectiveDuration(recipe)) }}</small>
+              <small>{{ recipe.outputGear ? 'Equipment' : outputLabel(recipe) }} · {{ formatDuration(effectiveDuration(recipe)) }} effective · Mastery {{ mastery(recipe) }}</small>
             </span>
             <em>{{ stateLabel(recipe) }}</em>
           </button>
@@ -374,7 +398,7 @@ function missingMaterialHint(item: string, needed: number) {
             <h2>{{ selectedRecipe.name }}</h2>
             <p>{{ selectedRecipe.description }}</p>
           </div>
-          <small>{{ formatDuration(effectiveDuration(selectedRecipe)) }}</small>
+          <small class="recipe-effective-stats"><span>{{ formatDuration(effectiveDuration(selectedRecipe)) }} effective</span><span>Mastery {{ mastery(selectedRecipe) }} · +{{ masterySpeed(selectedRecipe) }}% speed</span></small>
         </header>
 
         <section class="recipe-result">
@@ -411,7 +435,7 @@ function missingMaterialHint(item: string, needed: number) {
               <p><span>{{ recipeState(selectedRecipe) === 'active' ? 'RECIPE' : 'NEEDED' }}</span><strong>{{ Number(needed).toLocaleString() }}</strong></p>
               <span v-if="recipeState(selectedRecipe) === 'active'" class="material-ready">COMMITTED</span>
               <button v-else-if="(inventory[item] || 0) < Number(needed) && ingredientRecipe(String(item))" @click="openIngredient(String(item))">MAKE</button>
-              <button v-else-if="(inventory[item] || 0) < Number(needed) && ingredientSource(String(item))" @click="emit('navigate', ingredientSource(String(item))!)">GATHER</button>
+              <button v-else-if="(inventory[item] || 0) < Number(needed) && gatheringTarget(String(item))" @click="emit('navigate', gatheringTarget(String(item))!)">GATHER</button>
               <span v-else-if="(inventory[item] || 0) >= Number(needed)" class="material-ready">READY</span>
               <span v-else class="material-source">RARE DROP</span>
             </article>

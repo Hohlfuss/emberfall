@@ -44,7 +44,9 @@ type ServerState = {
   recipeLevels: Record<string, number>
   professionStats: Record<Skill, ServerProfessionStats>
   effectiveDurations: Record<string, number>
+  effectiveRecipeDurations: Record<string, number>
   resourceMastery: Record<string, number>
+  recipeMastery: Record<string, number>
   jobs: Partial<Record<Skill, { id: string; critical: boolean; duration: number; progress: number }>>
   inventory: Record<string, number>
   sellPrices: Record<string, number>
@@ -276,6 +278,8 @@ export function useGame() {
   const inventory = computed(() => state.value?.inventory || {})
   const sellPrices = computed(() => state.value?.sellPrices || {})
   const resourceMastery = computed(() => state.value?.resourceMastery || {})
+  const recipeMastery = computed(() => state.value?.recipeMastery || {})
+  const effectiveRecipeDurations = computed(() => state.value?.effectiveRecipeDurations || {})
   const workers = computed(() => state.value?.workers || 0)
   const workerPrice = computed(() => state.value?.workerPrice || 1000)
   const workerAssignments = computed(() => state.value?.workerAssignments || {})
@@ -998,7 +1002,7 @@ export function useGame() {
     tabs, page, authMode, authUsername, authPassword, authConfirmPassword, authError, authUsernameError, authLoading, sessionRestoring, serverOnline, backendError, playerName, playerTitle, gold, level, xp, xpNeeded, message, player, combatStats, dps,
     enemyTier, highestEnemyTier, encounterMode, defeatedBosses, tierFiveAreasUnlocked, bossDefinitions, currentBoss, enemy, battleStarted, autoBattle, selectedFood, autoEat, autoEatThreshold, autoEatCooldownRemaining, foodHealingPowerBonus, activeFoodHot, recovering, enemyLoading, recoveryRemaining, enemyLoadRemaining,
     heroHealth, enemyHealth, xpPercent, recoveryPercent, enemyLoadPercent, battleButtonLabel,
-    woods, rocks, fishingSpots, farmingPlots, allResources, rareMaterials, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, googleClientId, professions, jobs, inventory, sellPrices, resourceMastery,
+    woods, rocks, fishingSpots, farmingPlots, allResources, rareMaterials, gearCatalog, slotLabels, gearSlots, shopUpgradeDetails, googleClientId, professions, jobs, inventory, sellPrices, resourceMastery, recipeMastery, effectiveRecipeDurations,
     workers, workerPrice, workerAssignments, workerProgress, freeWorkers, equipment, ownedGear, gearSellPrices, shopUpgrades, achievements, craftingId, craftingProfession, craftingStats, cookingId, cookingProfession, cookingStats, factionDefinitions, alliedFaction, factions, dailyObjectives, dailyResetAt, metalDetector,
     craftingRecipes, cookingRecipeList, battleFoods, foodHealingValues, foodHotValues, recipeLevels, storeListings, materialGroups, toasts,
     leaderboardCategory, leaderboardLabel, leaderboardRows, leaderboardLoading, leaderboardError,
